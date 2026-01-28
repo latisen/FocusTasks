@@ -287,17 +287,6 @@ class FocusTasksView extends ItemView {
     row.toggleClass("is-complete", task.completed);
     row.toggleClass("is-collapsed", !this.expandedTasks.has(taskKey));
 
-    const toggle = row.createEl("button", { text: "▸" });
-    toggle.addClass("focus-tasks-toggle");
-    toggle.addEventListener("click", () => {
-      if (this.expandedTasks.has(taskKey)) {
-        this.expandedTasks.delete(taskKey);
-      } else {
-        this.expandedTasks.add(taskKey);
-      }
-      this.render();
-    });
-
     row.createEl("input", {
       type: "checkbox",
       attr: { disabled: "true" }
@@ -369,6 +358,17 @@ class FocusTasksView extends ItemView {
         tagEl.addClass("focus-tasks-tag");
       }
     }
+
+    const toggle = row.createEl("button", { text: "▸" });
+    toggle.addClass("focus-tasks-toggle");
+    toggle.addEventListener("click", () => {
+      if (this.expandedTasks.has(taskKey)) {
+        this.expandedTasks.delete(taskKey);
+      } else {
+        this.expandedTasks.add(taskKey);
+      }
+      this.render();
+    });
   }
 }
 

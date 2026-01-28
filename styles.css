@@ -60,7 +60,7 @@
 
 .focus-tasks-item {
   display: grid;
-  grid-template-columns: 18px 18px 1fr auto;
+  grid-template-columns: 18px 1fr 18px;
   align-items: center;
   gap: 6px;
   padding: 6px 8px;
