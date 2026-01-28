@@ -137,9 +137,15 @@ class FocusTasksView extends ItemView {
   private index: TaskIndex;
   private showCompleted = false;
   private listEl?: HTMLElement;
-  private selectedSection: "inbox" | "today" | "projects" | "review" = "inbox";
+  private selectedSection:
+    | "inbox"
+    | "today"
+    | "projects"
+    | "review"
+    | "tags" = "inbox";
   private sectionExpanded = new Map<string, boolean>();
   private expandedTasks = new Set<string>();
+  private selectedTags = new Set<string>();
 
   constructor(leaf: WorkspaceLeaf, index: TaskIndex) {
     super(leaf);
@@ -220,6 +226,16 @@ class FocusTasksView extends ItemView {
     reviewButton.toggleClass("is-active", this.selectedSection === "review");
     reviewButton.addEventListener("click", () => {
       this.selectedSection = "review";
+      this.render();
+    });
+
+    const tagsButton = sidebar.createEl("button", {
+      text: "Taggar"
+    });
+    tagsButton.addClass("focus-tasks-nav-item");
+    tagsButton.toggleClass("is-active", this.selectedSection === "tags");
+    tagsButton.addEventListener("click", () => {
+      this.selectedSection = "tags";
       this.render();
     });
 
@@ -318,6 +334,68 @@ class FocusTasksView extends ItemView {
 
       for (const task of tasks) {
         this.renderTaskRow(task, this.listEl, true);
+      }
+      return;
+    }
+
+    if (this.selectedSection === "tags") {
+      const tagSummary = getTagSummary(this.index.tasks, !this.showCompleted);
+      const filterBar = content.createDiv("focus-tasks-tag-filter");
+      filterBar.createEl("div", { text: "Filter" }).addClass("focus-tasks-tag-title");
+
+      const clearButton = filterBar.createEl("button", {
+        text: "Rensa"
+      });
+      clearButton.addClass("focus-tasks-tag-clear");
+      clearButton.addEventListener("click", () => {
+        this.selectedTags.clear();
+        this.render();
+      });
+
+      const tagList = filterBar.createDiv("focus-tasks-tag-list");
+      if (tagSummary.length === 0) {
+        tagList.createEl("div", { text: "Inga taggar." });
+      } else {
+        for (const tag of tagSummary) {
+          const tagButton = tagList.createEl("button", {
+            text: `${tag.name} (${tag.count})`
+          });
+          tagButton.addClass("focus-tasks-tag-filter-item");
+          tagButton.toggleClass("is-selected", this.selectedTags.has(tag.name));
+          tagButton.addEventListener("click", () => {
+            if (this.selectedTags.has(tag.name)) {
+              this.selectedTags.delete(tag.name);
+            } else {
+              this.selectedTags.add(tag.name);
+            }
+            this.render();
+          });
+        }
+      }
+
+      this.listEl = content.createDiv("focus-tasks-list");
+      const tasks = this.index.tasks.filter((task) => {
+        if (!this.showCompleted && task.completed) {
+          return false;
+        }
+        if (task.tags.length === 0) {
+          return false;
+        }
+        if (this.selectedTags.size === 0) {
+          return true;
+        }
+        return Array.from(this.selectedTags).every((tag) =>
+          task.tags.includes(tag)
+        );
+      });
+
+      if (tasks.length === 0) {
+        this.listEl.createEl("div", { text: "Inga uppgifter matchar." });
+        return;
+      }
+
+      for (const task of tasks) {
+        this.renderTaskRow(task, this.listEl);
       }
       return;
     }
@@ -810,6 +888,24 @@ function getLastReview(tasks: TaskItem[]): string | undefined {
     .filter((value): value is string => !!value)
     .sort((a, b) => b.localeCompare(a));
   return reviews[0];
+}
+
+function getTagSummary(
+  tasks: TaskItem[],
+  hideCompleted: boolean
+): Array<{ name: string; count: number }> {
+  const counts = new Map<string, number>();
+  for (const task of tasks) {
+    if (hideCompleted && task.completed) {
+      continue;
+    }
+    for (const tag of task.tags) {
+      counts.set(tag, (counts.get(tag) ?? 0) + 1);
+    }
+  }
+  return Array.from(counts.entries())
+    .map(([name, count]) => ({ name, count }))
+    .sort((a, b) => a.name.localeCompare(b.name));
 }
 
 function slugify(value: string): string {

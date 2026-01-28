@@ -224,6 +224,41 @@
   font-size: 12px;
 }
 
+.focus-tasks-tag-filter {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.focus-tasks-tag-title {
+  font-weight: 600;
+}
+
+.focus-tasks-tag-clear {
+  font-size: 12px;
+}
+
+.focus-tasks-tag-list {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.focus-tasks-tag-filter-item {
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 999px;
+  padding: 2px 10px;
+  font-size: 12px;
+  background: var(--background-primary);
+}
+
+.focus-tasks-tag-filter-item.is-selected {
+  background: var(--background-modifier-hover);
+  font-weight: 600;
+}
+
 .focus-tasks-project-overview {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
