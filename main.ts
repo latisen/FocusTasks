@@ -76,7 +76,8 @@ class FocusTasksView extends ItemView {
   private index: TaskIndex;
   private showCompleted = false;
   private listEl?: HTMLElement;
-  private selectedSection: "inbox" = "inbox";
+  private selectedSection: "inbox" | "today" = "inbox";
+  private sectionExpanded = new Map<string, boolean>();
 
   constructor(leaf: WorkspaceLeaf, index: TaskIndex) {
     super(leaf);
@@ -130,93 +131,175 @@ class FocusTasksView extends ItemView {
       this.render();
     });
 
-    this.listEl = content.createDiv("focus-tasks-list");
+    const todayButton = sidebar.createEl("button", {
+      text: "Today"
+    });
+    todayButton.addClass("focus-tasks-nav-item");
+    todayButton.toggleClass("is-active", this.selectedSection === "today");
+    todayButton.addEventListener("click", () => {
+      this.selectedSection = "today";
+      this.render();
+    });
 
-    const tasks = this.index.tasks.filter((task) => {
+    if (this.selectedSection === "inbox") {
+      this.listEl = content.createDiv("focus-tasks-list");
+
+      const tasks = this.index.tasks.filter((task) => {
+        if (!this.showCompleted && task.completed) {
+          return false;
+        }
+        return !task.project && !task.due && !task.planned;
+      });
+
+      if (tasks.length === 0) {
+        this.listEl.createEl("div", { text: "Inga uppgifter ännu." });
+        return;
+      }
+
+      for (const task of tasks) {
+        this.renderTaskRow(task, this.listEl);
+      }
+      return;
+    }
+
+    const today = getLocalDateString();
+    const tomorrow = getLocalDateString(1);
+
+    const overdue = this.index.tasks.filter((task) => {
       if (!this.showCompleted && task.completed) {
         return false;
       }
-      if (this.selectedSection === "inbox") {
-        return !task.project && !task.due && !task.planned;
-      }
-      return true;
+      return !!task.due && task.due < today;
     });
 
+    const plannedToday = this.index.tasks.filter((task) => {
+      if (!this.showCompleted && task.completed) {
+        return false;
+      }
+      return task.planned === today;
+    });
+
+    const plannedTomorrow = this.index.tasks.filter((task) => {
+      if (!this.showCompleted && task.completed) {
+        return false;
+      }
+      return task.planned === tomorrow;
+    });
+
+    this.renderSection(content, "Överfört", overdue, "overdue");
+    this.renderSection(content, "Planerat idag", plannedToday, "planned-today");
+    this.renderSection(
+      content,
+      "Planerat imorgon",
+      plannedTomorrow,
+      "planned-tomorrow"
+    );
+  }
+
+  private renderSection(
+    container: HTMLElement,
+    title: string,
+    tasks: TaskItem[],
+    key: string
+  ): void {
+    const section = container.createDiv("focus-tasks-section");
+    const header = section.createDiv("focus-tasks-section-header");
+    header.createEl("span", { text: title });
+
+    const isExpanded = this.sectionExpanded.get(key) ?? true;
+    const toggle = header.createEl("button", {
+      text: isExpanded ? "Dölj" : "Visa"
+    });
+    toggle.addClass("focus-tasks-section-toggle");
+    toggle.addEventListener("click", () => {
+      this.sectionExpanded.set(key, !isExpanded);
+      this.render();
+    });
+
+    if (!isExpanded) {
+      return;
+    }
+
+    const list = section.createDiv("focus-tasks-list");
     if (tasks.length === 0) {
-      this.listEl.createEl("div", { text: "Inga uppgifter ännu." });
+      list.createEl("div", { text: "Inga uppgifter." });
       return;
     }
 
     for (const task of tasks) {
-      const row = this.listEl.createDiv("focus-tasks-item");
-      row.toggleClass("is-complete", task.completed);
+      this.renderTaskRow(task, list);
+    }
+  }
 
-      row.createEl("input", {
-        type: "checkbox",
-        attr: { disabled: "true" }
-      }).checked = task.completed;
+  private renderTaskRow(task: TaskItem, container: HTMLElement): void {
+    const row = container.createDiv("focus-tasks-item");
+    row.toggleClass("is-complete", task.completed);
 
-      const main = row.createDiv("focus-tasks-main");
+    row.createEl("input", {
+      type: "checkbox",
+      attr: { disabled: "true" }
+    }).checked = task.completed;
 
-      const textInput = main.createEl("input", {
-        type: "text"
-      });
-      textInput.value = task.text;
-      textInput.addClass("focus-tasks-text-input");
-      textInput.addEventListener("blur", () => {
-        if (textInput.value.trim() === task.text) {
-          return;
-        }
-        updateTaskInFile(this.app, task, { text: textInput.value.trim() })
-          .then(() => this.index.triggerRefresh())
-          .catch(console.error);
-      });
-      textInput.addEventListener("keydown", (event) => {
-        if (event.key === "Enter") {
-          textInput.blur();
-        }
-      });
+    const main = row.createDiv("focus-tasks-main");
 
-      const noteRow = main.createDiv("focus-tasks-note-row");
-      const openButton = noteRow.createEl("button", {
-        text: task.file.basename
-      });
-      openButton.addClass("focus-tasks-file");
-      openButton.addEventListener("click", () => {
-        this.app.workspace.getLeaf(false).openFile(task.file);
-      });
+    const textInput = main.createEl("input", {
+      type: "text"
+    });
+    textInput.value = task.text;
+    textInput.addClass("focus-tasks-text-input");
+    textInput.addEventListener("blur", () => {
+      if (textInput.value.trim() === task.text) {
+        return;
+      }
+      updateTaskInFile(this.app, task, { text: textInput.value.trim() })
+        .then(() => this.index.triggerRefresh())
+        .catch(console.error);
+    });
+    textInput.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        textInput.blur();
+      }
+    });
 
-      const metaRow = main.createDiv("focus-tasks-meta-row");
+    const noteRow = main.createDiv("focus-tasks-note-row");
+    const openButton = noteRow.createEl("button", {
+      text: task.file.basename
+    });
+    openButton.addClass("focus-tasks-file");
+    openButton.addEventListener("click", () => {
+      this.app.workspace.getLeaf(false).openFile(task.file);
+    });
 
-      const plannedWrap = metaRow.createDiv("focus-tasks-date");
-      plannedWrap.createEl("span", { text: "Planerad" });
-      const plannedInput = plannedWrap.createEl("input", { type: "date" });
-      plannedInput.value = task.planned ?? "";
-      plannedInput.addEventListener("change", () => {
-        updateTaskInFile(this.app, task, {
-          planned: plannedInput.value || undefined
-        })
-          .then(() => this.index.triggerRefresh())
-          .catch(console.error);
-      });
+    const metaRow = main.createDiv("focus-tasks-meta-row");
 
-      const dueWrap = metaRow.createDiv("focus-tasks-date");
-      dueWrap.createEl("span", { text: "Due" });
-      const dueInput = dueWrap.createEl("input", { type: "date" });
-      dueInput.value = task.due ?? "";
-      dueInput.addEventListener("change", () => {
-        updateTaskInFile(this.app, task, {
-          due: dueInput.value || undefined
-        })
-          .then(() => this.index.triggerRefresh())
-          .catch(console.error);
-      });
+    const plannedWrap = metaRow.createDiv("focus-tasks-date");
+    plannedWrap.createEl("span", { text: "Planerad" });
+    const plannedInput = plannedWrap.createEl("input", { type: "date" });
+    plannedInput.value = task.planned ?? "";
+    plannedInput.addEventListener("change", () => {
+      updateTaskInFile(this.app, task, {
+        planned: plannedInput.value || undefined
+      })
+        .then(() => this.index.triggerRefresh())
+        .catch(console.error);
+    });
 
-      if (task.tags.length > 0) {
-        const tagsWrap = metaRow.createDiv("focus-tasks-tags");
-        for (const tag of task.tags) {
-          tagsWrap.createEl("span", { text: tag }).addClass("focus-tasks-tag");
-        }
+    const dueWrap = metaRow.createDiv("focus-tasks-date");
+    dueWrap.createEl("span", { text: "Due" });
+    const dueInput = dueWrap.createEl("input", { type: "date" });
+    dueInput.value = task.due ?? "";
+    dueInput.addEventListener("change", () => {
+      updateTaskInFile(this.app, task, {
+        due: dueInput.value || undefined
+      })
+        .then(() => this.index.triggerRefresh())
+        .catch(console.error);
+    });
+
+    if (task.tags.length > 0) {
+      const tagsWrap = metaRow.createDiv("focus-tasks-tags");
+      for (const tag of task.tags) {
+        tagsWrap.createEl("span", { text: tag }).addClass("focus-tasks-tag");
       }
     }
   }
@@ -331,6 +414,15 @@ function extractTags(text: string): string[] {
     return [];
   }
   return Array.from(new Set(tags));
+}
+
+function getLocalDateString(addDays = 0): string {
+  const date = new Date();
+  date.setDate(date.getDate() + addDays);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 async function updateTaskInFile(

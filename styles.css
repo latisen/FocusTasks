@@ -138,3 +138,23 @@
   font-size: 11px;
   color: var(--text-muted);
 }
+
+.focus-tasks-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.focus-tasks-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 8px;
+  font-weight: 600;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.focus-tasks-section-toggle {
+  font-size: 12px;
+}
