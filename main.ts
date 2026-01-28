@@ -52,10 +52,12 @@ type CalendarSource = {
 
 type FocusTasksSettings = {
   calendarSources: CalendarSource[];
+  calendarRangeDays: number;
 };
 
 const DEFAULT_SETTINGS: FocusTasksSettings = {
-  calendarSources: Array.from({ length: 10 }, () => ({ name: "", url: "" }))
+  calendarSources: Array.from({ length: 10 }, () => ({ name: "", url: "" })),
+  calendarRangeDays: 7
 };
 
 class TaskIndex {
@@ -928,7 +930,9 @@ export default class FocusTasksPlugin extends Plugin {
         : undefined);
 
     this.settings = {
-      calendarSources: sources ?? DEFAULT_SETTINGS.calendarSources
+      calendarSources: sources ?? DEFAULT_SETTINGS.calendarSources,
+      calendarRangeDays:
+        data.calendarRangeDays ?? DEFAULT_SETTINGS.calendarRangeDays
     };
 
     if (this.settings.calendarSources.length < 10) {
@@ -952,7 +956,9 @@ export default class FocusTasksPlugin extends Plugin {
     );
     const events = new Map<string, CalendarEvent[]>();
     const rangeStart = getLocalDateString();
-    const rangeEnd = getLocalDateString(7);
+    const rangeEnd = getLocalDateString(
+      Math.max(1, Math.min(60, this.settings.calendarRangeDays))
+    );
     this.calendarLastError = undefined;
     this.calendarSuccessCount = 0;
     this.calendarFailCount = 0;
@@ -1045,6 +1051,22 @@ class FocusTasksSettingTab extends PluginSettingTab {
       text: "Fyll i upp till 10 ICS‑URLer. Lämna tomt för att inaktivera."
     });
 
+    new Setting(containerEl)
+      .setName("Antal dagar framåt")
+      .setDesc("Hur många dagar i framtiden kalendern ska visa (1–60)")
+      .addText((text) =>
+        text
+          .setPlaceholder("7")
+          .setValue(String(this.plugin.settings.calendarRangeDays))
+          .onChange(async (newValue) => {
+            const parsed = Number.parseInt(newValue, 10);
+            this.plugin.settings.calendarRangeDays = Number.isNaN(parsed)
+              ? DEFAULT_SETTINGS.calendarRangeDays
+              : Math.max(1, Math.min(60, parsed));
+            await this.plugin.saveSettings();
+          })
+      );
+
     const status = this.plugin.getCalendarStatus();
     const statusText = status.lastRefresh
       ? `Senast uppdaterad: ${status.lastRefresh}`
@@ -1056,6 +1078,9 @@ class FocusTasksSettingTab extends PluginSettingTab {
     });
     containerEl.createEl("p", {
       text: `Events hittade: ${this.plugin.getCalendarEventCount()}`
+    });
+    containerEl.createEl("p", {
+      text: `Range: ${this.plugin.settings.calendarRangeDays} dagar`
     });
     if (status.lastError) {
       containerEl.createEl("p", { text: status.lastError });
