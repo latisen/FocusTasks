@@ -795,7 +795,9 @@ class FocusTasksView extends ItemView {
       const row = list.createDiv("focus-tasks-event");
       const timeLabel = event.allDay
         ? "Heldag"
-        : `${event.startTime ?? ""} - ${event.endTime ?? ""}`.trim();
+        : event.startTime && event.endTime
+        ? `${event.startTime} - ${event.endTime}`
+        : event.startTime ?? "";
       const calendarLabel = event.calendarName
         ? ` (${event.calendarName})`
         : "";
@@ -1437,8 +1439,8 @@ function parseIcsEvents(
   registerTimezones(component);
   const events = component.getAllSubcomponents("vevent");
   const parsed: CalendarEvent[] = [];
-  const startLimit = rangeStart ? startOfDay(rangeStart) : undefined;
-  const endLimit = rangeEnd ? endOfDay(rangeEnd) : undefined;
+  const startLimit = rangeStart;
+  const endLimit = rangeEnd;
 
   for (const vevent of events) {
     const event = new ICAL.Event(vevent);
@@ -1448,17 +1450,17 @@ function parseIcsEvents(
 
     if (event.isRecurring()) {
       const iterator = event.iterator(
-        startLimit ? ICAL.Time.fromJSDate(startLimit) : undefined
+        startLimit ? ICAL.Time.fromDateString(startLimit) : undefined
       );
       let next = iterator.next();
       while (next) {
         const occurrence = event.getOccurrenceDetails(next);
-        const occStart = occurrence.startDate.toJSDate();
-        if (startLimit && occStart < startLimit) {
+        const occDate = formatIcalDate(occurrence.startDate);
+        if (startLimit && occDate < startLimit) {
           next = iterator.next();
           continue;
         }
-        if (endLimit && occStart > endLimit) {
+        if (endLimit && occDate > endLimit) {
           break;
         }
         parsed.push(
@@ -1474,11 +1476,11 @@ function parseIcsEvents(
       continue;
     }
 
-    const singleStart = event.startDate.toJSDate();
-    if (startLimit && singleStart < startLimit) {
+    const singleDate = formatIcalDate(event.startDate);
+    if (startLimit && singleDate < startLimit) {
       continue;
     }
-    if (endLimit && singleStart > endLimit) {
+    if (endLimit && singleDate > endLimit) {
       continue;
     }
     parsed.push(
@@ -1496,21 +1498,17 @@ function buildEventEntries(
   calendarName?: string
 ): CalendarEvent[] {
   const allDay = start.isDate;
-  const startDate = start.toJSDate();
-  const endDate = end ? end.toJSDate() : startDate;
-  const dates = allDay
-    ? enumerateDates(
-        formatDate(startDate),
-        formatDate(new Date(endDate.getTime() - 86400000))
-      )
-    : enumerateDates(formatDate(startDate), formatDate(endDate));
+  const startDate = formatIcalDate(start);
+  const endDate = end ? formatIcalDate(end) : startDate;
+  const endDateAdjusted = allDay ? adjustDate(endDate, -1) : endDate;
+  const dates = enumerateDates(startDate, endDateAdjusted);
 
   return dates.map((date) => ({
     title: event.summary || "(Untitled)",
     date,
     allDay,
-    startTime: allDay ? undefined : formatTime(startDate),
-    endTime: allDay ? undefined : formatTime(endDate),
+    startTime: allDay ? undefined : formatIcalTime(start),
+    endTime: allDay ? undefined : (end ? formatIcalTime(end) : undefined),
     location: event.location || undefined,
     calendarName
   }));
@@ -1525,6 +1523,25 @@ function formatDate(date: Date): string {
 
 function formatTime(date: Date): string {
   return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+function formatIcalDate(time: ICAL.Time): string {
+  const year = time.year;
+  const month = String(time.month).padStart(2, "0");
+  const day = String(time.day).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function formatIcalTime(time: ICAL.Time): string {
+  const hour = String(time.hour).padStart(2, "0");
+  const minute = String(time.minute).padStart(2, "0");
+  return `${hour}:${minute}`;
+}
+
+function adjustDate(date: string, offsetDays: number): string {
+  const [year, month, day] = date.split("-").map(Number);
+  const adjusted = new Date(year, month - 1, day + offsetDays);
+  return formatDate(adjusted);
 }
 
 function registerTimezones(component: ICAL.Component): void {
