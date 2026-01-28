@@ -805,6 +805,8 @@ export default class FocusTasksPlugin extends Plugin {
   private calendarInterval?: number;
   private calendarLastRefresh?: string;
   private calendarLastError?: string;
+  private calendarSuccessCount = 0;
+  private calendarFailCount = 0;
 
   async onload(): Promise<void> {
     this.index = new TaskIndex(this.app);
@@ -889,6 +891,13 @@ export default class FocusTasksPlugin extends Plugin {
     };
   }
 
+  getCalendarStats(): { success: number; failed: number } {
+    return {
+      success: this.calendarSuccessCount,
+      failed: this.calendarFailCount
+    };
+  }
+
   async loadSettings(): Promise<void> {
     this.settings = Object.assign(
       {},
@@ -908,20 +917,29 @@ export default class FocusTasksPlugin extends Plugin {
     const rangeStart = getLocalDateString();
     const rangeEnd = getLocalDateString(7);
     this.calendarLastError = undefined;
+    this.calendarSuccessCount = 0;
+    this.calendarFailCount = 0;
 
     for (const url of urls) {
       try {
         const normalizedUrl = normalizeCalendarUrl(url);
-        const response = await this.app.requestUrl({ url: normalizedUrl });
+        const response = await this.app.requestUrl({
+          url: normalizedUrl,
+          headers: { "User-Agent": "FocusTasks" }
+        });
         const parsed = parseIcsEvents(response.text ?? "", rangeStart, rangeEnd);
         for (const event of parsed) {
           const list = events.get(event.date) ?? [];
           list.push(event);
           events.set(event.date, list);
         }
+        this.calendarSuccessCount += 1;
       } catch (error) {
         console.error("Calendar fetch failed", error);
-        this.calendarLastError = "Kunde inte läsa en eller flera kalendrar.";
+        this.calendarFailCount += 1;
+        const message =
+          error instanceof Error ? error.message : "Okänt fel";
+        this.calendarLastError = `Kunde inte läsa kalender: ${message}`;
       }
     }
 
@@ -987,6 +1005,10 @@ class FocusTasksSettingTab extends PluginSettingTab {
       ? `Senast uppdaterad: ${status.lastRefresh}`
       : "Ingen uppdatering ännu.";
     containerEl.createEl("p", { text: statusText });
+    const stats = this.plugin.getCalendarStats();
+    containerEl.createEl("p", {
+      text: `Lyckade: ${stats.success} • Misslyckade: ${stats.failed}`
+    });
     if (status.lastError) {
       containerEl.createEl("p", { text: status.lastError });
     }
