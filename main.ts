@@ -1533,7 +1533,8 @@ function parseIcsEvents(
     if (event.isRecurring()) {
       let iteratorStart: ICAL.Time | undefined;
       if (startLimit) {
-        iteratorStart = ICAL.Time.fromDateTimeString(`${startLimit}T000000`);
+        const compact = startLimit.replace(/-/g, "");
+        iteratorStart = ICAL.Time.fromDateTimeString(`${compact}T000000`);
         if (event.startDate.zone) {
           iteratorStart.zone = event.startDate.zone;
         }
