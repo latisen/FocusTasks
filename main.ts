@@ -359,7 +359,7 @@ class FocusTasksView extends ItemView {
       }
 
       const addTag = (value: string): void => {
-        const tag = value.trim();
+        const tag = normalizeTag(value);
         if (!tag) {
           return;
         }
@@ -792,7 +792,7 @@ function extractTags(text: string): { text: string; tags: string[] } {
   if (!tags) {
     return { text, tags: [] };
   }
-  const unique = Array.from(new Set(tags));
+  const unique = Array.from(new Set(tags.map((tag) => normalizeTag(tag))));
   const cleaned = text.replace(/#[-\w/]+/g, " ").replace(/\s+/g, " ");
   return { text: cleaned, tags: unique };
 }
@@ -821,6 +821,15 @@ function normalizeProjectName(value: string): string {
     return wikilinkMatch[1].trim();
   }
   return trimmed.replace(/#[-\w/]+/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function normalizeTag(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return "";
+  }
+  const withHash = trimmed.startsWith("#") ? trimmed : `#${trimmed}`;
+  return withHash.toLowerCase();
 }
 
 function getIndentation(line: string): number {
@@ -930,7 +939,8 @@ function getTagSummary(
       continue;
     }
     for (const tag of task.tags) {
-      counts.set(tag, (counts.get(tag) ?? 0) + 1);
+      const normalized = normalizeTag(tag);
+      counts.set(normalized, (counts.get(normalized) ?? 0) + 1);
     }
   }
   return Array.from(counts.entries())
