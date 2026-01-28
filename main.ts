@@ -491,11 +491,11 @@ function normalizeDateString(value: string): string {
 
 function normalizeProjectName(value: string): string {
   const trimmed = value.trim();
-  const wikilinkMatch = /^\[\[([^\]]+)\]\]$/.exec(trimmed);
+  const wikilinkMatch = /\[\[([^\]]+)\]\]/.exec(trimmed);
   if (wikilinkMatch) {
     return wikilinkMatch[1].trim();
   }
-  return trimmed;
+  return trimmed.replace(/#[-\w/]+/g, " ").replace(/\s+/g, " ").trim();
 }
 
 function parseDate(value?: string): string | undefined {
