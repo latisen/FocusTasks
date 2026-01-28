@@ -1596,7 +1596,7 @@ function buildEventEntries(
   const startDate = formatIcalDate(start);
   const endDate = end ? formatIcalDate(end) : startDate;
   const endDateAdjusted = allDay ? adjustDate(endDate, -1) : endDate;
-  const dates = enumerateDates(startDate, endDateAdjusted);
+  const dates = allDay ? enumerateDates(startDate, endDateAdjusted) : [startDate];
   const startTime = allDay ? undefined : formatIcalTime(start);
   const endTime = allDay ? undefined : (end ? formatIcalTime(end) : undefined);
 
