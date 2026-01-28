@@ -239,6 +239,11 @@
   display: flex;
   flex-direction: column;
   gap: 4px;
+  cursor: pointer;
+}
+
+.focus-tasks-project-card:hover {
+  background: var(--background-modifier-hover);
 }
 
 .focus-tasks-project-name {

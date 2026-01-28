@@ -261,8 +261,13 @@ class FocusTasksView extends ItemView {
         const openCount = tasks.filter((task) => !task.completed).length;
         const nextAction = getNextAction(tasks);
         const lastReview = getLastReview(tasks);
+        const sectionId = `focus-project-${slugify(projectName)}`;
 
         const card = overview.createDiv("focus-tasks-project-card");
+        card.addEventListener("click", () => {
+          const target = content.querySelector(`#${sectionId}`);
+          target?.scrollIntoView({ behavior: "smooth", block: "start" });
+        });
         card.createEl("div", { text: projectName }).addClass("focus-tasks-project-name");
         card.createEl("div", { text: `${openCount} öppna` }).addClass("focus-tasks-project-count");
 
@@ -281,7 +286,13 @@ class FocusTasksView extends ItemView {
 
       for (const [projectName, tasks] of projects) {
         const sorted = sortTasksByDate(tasks);
-        this.renderSection(content, projectName, sorted, `project:${projectName}`);
+        this.renderSection(
+          content,
+          projectName,
+          sorted,
+          `project:${projectName}`,
+          `focus-project-${slugify(projectName)}`
+        );
       }
       return;
     }
@@ -366,9 +377,13 @@ class FocusTasksView extends ItemView {
     container: HTMLElement,
     title: string,
     tasks: TaskItem[],
-    key: string
+    key: string,
+    sectionId?: string
   ): void {
     const section = container.createDiv("focus-tasks-section");
+    if (sectionId) {
+      section.setAttribute("id", sectionId);
+    }
     const header = section.createDiv("focus-tasks-section-header");
     header.createEl("span", { text: title });
 
@@ -795,6 +810,15 @@ function getLastReview(tasks: TaskItem[]): string | undefined {
     .filter((value): value is string => !!value)
     .sort((a, b) => b.localeCompare(a));
   return reviews[0];
+}
+
+function slugify(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/\s+/g, "-")
+    .replace(/[^a-z0-9-]/g, "")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
 }
 
 
