@@ -1434,6 +1434,7 @@ function parseIcsEvents(
   }
   const jcal = ICAL.parse(ics);
   const component = new ICAL.Component(jcal);
+  registerTimezones(component);
   const events = component.getAllSubcomponents("vevent");
   const parsed: CalendarEvent[] = [];
   const startLimit = rangeStart ? startOfDay(rangeStart) : undefined;
@@ -1524,6 +1525,17 @@ function formatDate(date: Date): string {
 
 function formatTime(date: Date): string {
   return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+function registerTimezones(component: ICAL.Component): void {
+  const timezones = component.getAllSubcomponents("vtimezone");
+  for (const timezone of timezones) {
+    try {
+      ICAL.TimezoneService.register(timezone);
+    } catch (error) {
+      console.warn("Timezone register failed", error);
+    }
+  }
 }
 
 function startOfDay(date: string): Date {
