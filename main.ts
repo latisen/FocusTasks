@@ -147,7 +147,8 @@ class FocusTasksView extends ItemView {
     | "projects"
     | "review"
     | "tags"
-    | "contexts" = "inbox";
+    | "contexts"
+    | "forecast" = "inbox";
   private sectionExpanded = new Map<string, boolean>();
   private expandedTasks = new Set<string>();
   private selectedTags = new Set<string>();
@@ -251,6 +252,16 @@ class FocusTasksView extends ItemView {
     contextsButton.toggleClass("is-active", this.selectedSection === "contexts");
     contextsButton.addEventListener("click", () => {
       this.selectedSection = "contexts";
+      this.render();
+    });
+
+    const forecastButton = sidebar.createEl("button", {
+      text: "Forecast"
+    });
+    forecastButton.addClass("focus-tasks-nav-item");
+    forecastButton.toggleClass("is-active", this.selectedSection === "forecast");
+    forecastButton.addEventListener("click", () => {
+      this.selectedSection = "forecast";
       this.render();
     });
 
@@ -464,6 +475,29 @@ class FocusTasksView extends ItemView {
           sorted,
           `context:${contextName}`
         );
+      }
+      return;
+    }
+
+    if (this.selectedSection === "forecast") {
+      const today = getLocalDateString();
+      const days = 7;
+      const forecast = buildForecastMap(
+        this.index.tasks,
+        today,
+        days,
+        !this.showCompleted
+      );
+
+      const overdue = this.index.tasks.filter((task) =>
+        isTaskOverdue(task, today)
+      );
+      this.renderSection(content, "Överfört", overdue, "forecast-overdue");
+
+      for (let offset = 0; offset < days; offset += 1) {
+        const date = getLocalDateString(offset);
+        const tasks = forecast.get(date) ?? [];
+        this.renderSection(content, formatForecastTitle(date, offset), tasks, `forecast-${date}`);
       }
       return;
     }
@@ -1208,6 +1242,82 @@ function sortTasksByDate(tasks: TaskItem[]): TaskItem[] {
     }
     return a.text.localeCompare(b.text);
   });
+}
+
+function buildForecastMap(
+  tasks: TaskItem[],
+  startDate: string,
+  days: number,
+  hideCompleted: boolean
+): Map<string, TaskItem[]> {
+  const map = new Map<string, TaskItem[]>();
+  for (let offset = 0; offset < days; offset += 1) {
+    map.set(getLocalDateString(offset), []);
+  }
+
+  for (const task of tasks) {
+    if (hideCompleted && task.completed) {
+      continue;
+    }
+    const plannedDate = parseDate(task.planned);
+    const dueDate = parseDate(task.due);
+
+    if (plannedDate && dueDate) {
+      const dates = enumerateDates(plannedDate, dueDate);
+      for (const date of dates) {
+        if (map.has(date)) {
+          map.get(date)!.push(task);
+        }
+      }
+      continue;
+    }
+
+    if (plannedDate) {
+      if (map.has(plannedDate)) {
+        map.get(plannedDate)!.push(task);
+      }
+      continue;
+    }
+
+    if (dueDate) {
+      if (map.has(dueDate)) {
+        map.get(dueDate)!.push(task);
+      }
+    }
+  }
+
+  for (const [date, items] of map) {
+    map.set(date, sortTasksByDate(items));
+  }
+
+  return map;
+}
+
+function enumerateDates(start: string, end: string): string[] {
+  if (start > end) {
+    return [];
+  }
+  const dates: string[] = [];
+  const current = new Date(start);
+  const last = new Date(end);
+  while (current <= last) {
+    const year = current.getFullYear();
+    const month = String(current.getMonth() + 1).padStart(2, "0");
+    const day = String(current.getDate()).padStart(2, "0");
+    dates.push(`${year}-${month}-${day}`);
+    current.setDate(current.getDate() + 1);
+  }
+  return dates;
+}
+
+function formatForecastTitle(date: string, offset: number): string {
+  if (offset === 0) {
+    return `Idag (${date})`;
+  }
+  if (offset === 1) {
+    return `Imorgon (${date})`;
+  }
+  return date;
 }
 
 function getNextAction(tasks: TaskItem[]): string | undefined {
