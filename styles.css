@@ -210,6 +210,10 @@
   height: 18px;
 }
 
+.focus-tasks-inline-button-editor {
+  vertical-align: middle;
+}
+
 .focus-tasks-inline-button svg {
   width: 14px;
   height: 14px;

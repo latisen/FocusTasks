@@ -8,6 +8,15 @@ import {
   debounce,
   setIcon
 } from "obsidian";
+import {
+  Decoration,
+  DecorationSet,
+  EditorView,
+  ViewPlugin,
+  ViewUpdate,
+  WidgetType
+} from "@codemirror/view";
+import { RangeSetBuilder } from "@codemirror/state";
 
 const VIEW_TYPE = "focus-tasks-view";
 
@@ -724,6 +733,10 @@ export default class FocusTasksPlugin extends Plugin {
       this.app.vault.on("rename", (file) => this.onFileChange(file))
     );
 
+    this.registerEditorExtension(
+      createTaskButtonExtension(this.app, () => this.index.triggerRefresh())
+    );
+
     this.registerMarkdownPostProcessor((el, ctx) => {
       const file = this.app.vault.getAbstractFileByPath(ctx.sourcePath ?? "");
       if (!(file instanceof TFile)) {
@@ -917,6 +930,85 @@ class TaskEditModal extends Modal {
     };
     return { task, taskRef: task };
   }
+}
+
+class TaskEditWidget extends WidgetType {
+  private app: App;
+  private line: number;
+  private onSave: () => void;
+
+  constructor(app: App, line: number, onSave: () => void) {
+    super();
+    this.app = app;
+    this.line = line;
+    this.onSave = onSave;
+  }
+
+  toDOM(): HTMLElement {
+    const button = document.createElement("button");
+    button.className = "focus-tasks-inline-button focus-tasks-inline-button-editor";
+    button.setAttribute("type", "button");
+    button.setAttribute("title", "Edit FocusTasks");
+    setIcon(button, "check-square");
+    button.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const file = this.app.workspace.getActiveFile();
+      if (!file) {
+        return;
+      }
+      const modal = new TaskEditModal(this.app, file, this.line, this.onSave);
+      modal.open();
+    });
+    return button;
+  }
+}
+
+function createTaskButtonExtension(app: App, onSave: () => void) {
+  return ViewPlugin.fromClass(
+    class {
+      decorations: DecorationSet;
+
+      constructor(view: EditorView) {
+        this.decorations = buildTaskButtonDecorations(app, onSave, view);
+      }
+
+      update(update: ViewUpdate) {
+        if (update.docChanged || update.viewportChanged) {
+          this.decorations = buildTaskButtonDecorations(app, onSave, update.view);
+        }
+      }
+    },
+    {
+      decorations: (value) => value.decorations
+    }
+  );
+}
+
+function buildTaskButtonDecorations(
+  app: App,
+  onSave: () => void,
+  view: EditorView
+): DecorationSet {
+  const builder = new RangeSetBuilder<Decoration>();
+  for (const range of view.visibleRanges) {
+    let pos = range.from;
+    while (pos <= range.to) {
+      const line = view.state.doc.lineAt(pos);
+      pos = line.to + 1;
+      if (/^\s*[-*]\s+\[( |x|X)\]\s+/.test(line.text)) {
+        builder.add(
+          line.to,
+          line.to,
+          Decoration.widget({
+            widget: new TaskEditWidget(app, line.number, onSave),
+            side: 1
+          })
+        );
+      }
+    }
+  }
+  return builder.finish();
 }
 
 function parseTaskMetadata(rawText: string): {
