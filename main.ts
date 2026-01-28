@@ -1600,13 +1600,15 @@ function buildEventEntries(
   const endDate = end ? formatIcalDate(end) : startDate;
   const endDateAdjusted = allDay ? adjustDate(endDate, -1) : endDate;
   const dates = enumerateDates(startDate, endDateAdjusted);
+  const startTime = allDay ? undefined : formatIcalTime(start);
+  const endTime = allDay ? undefined : (end ? formatIcalTime(end) : undefined);
 
   return dates.map((date) => ({
     title: event.summary || "(Untitled)",
     date,
     allDay,
-    startTime: allDay ? undefined : formatIcalTime(start),
-    endTime: allDay ? undefined : (end ? formatIcalTime(end) : undefined),
+    startTime,
+    endTime,
     location: event.location || undefined,
     calendarName
   }));
@@ -1631,9 +1633,19 @@ function formatIcalDate(time: ICAL.Time): string {
 }
 
 function formatIcalTime(time: ICAL.Time): string {
-  const hour = String(time.hour).padStart(2, "0");
-  const minute = String(time.minute).padStart(2, "0");
-  return `${hour}:${minute}`;
+  const jsDate = time.toJSDate();
+  const tzid = time.zone?.tzid;
+  if (tzid && tzid !== "floating") {
+    return new Intl.DateTimeFormat([], {
+      hour: "2-digit",
+      minute: "2-digit",
+      timeZone: tzid
+    }).format(jsDate);
+  }
+  return new Intl.DateTimeFormat([], {
+    hour: "2-digit",
+    minute: "2-digit"
+  }).format(jsDate);
 }
 
 function adjustDate(date: string, offsetDays: number): string {
