@@ -19,6 +19,13 @@ type TaskItem = {
   due?: string;
   review?: string;
   tags: string[];
+  subitems: TaskSubItem[];
+};
+
+type TaskSubItem = {
+  text: string;
+  completed?: boolean;
+  kind: "task" | "note";
 };
 
 class TaskIndex {
@@ -58,6 +65,54 @@ class TaskIndex {
           continue;
         }
 
+        const subitems: TaskSubItem[] = [];
+        const indent = getIndentation(lineText);
+        let j = i + 1;
+        while (j < lines.length) {
+          const nextLine = lines[j];
+          if (!nextLine.trim()) {
+            break;
+          }
+          const nextIndent = getIndentation(nextLine);
+          if (nextIndent <= indent) {
+            break;
+          }
+
+          const subTaskMatch = /^\s*[-*]\s+\[( |x|X)\]\s+(.*)$/.exec(nextLine);
+          if (subTaskMatch) {
+            const subParsed = parseTaskMetadata(subTaskMatch[2].trim());
+            if (subParsed.text) {
+              subitems.push({
+                kind: "task",
+                text: subParsed.text,
+                completed: subTaskMatch[1].toLowerCase() === "x"
+              });
+            }
+            j += 1;
+            continue;
+          }
+
+          const bulletMatch = /^\s*[-*]\s+(.*)$/.exec(nextLine);
+          if (bulletMatch) {
+            const bulletText = bulletMatch[1].trim();
+            if (bulletText) {
+              subitems.push({ kind: "note", text: bulletText });
+            }
+            j += 1;
+            continue;
+          }
+
+          const noteText = nextLine.trim();
+          if (noteText) {
+            subitems.push({ kind: "note", text: noteText });
+          }
+          j += 1;
+        }
+
+        if (j > i + 1) {
+          i = j - 1;
+        }
+
         tasks.push({
           file,
           line: i + 1,
@@ -67,7 +122,8 @@ class TaskIndex {
           planned: parsed.planned,
           due: parsed.due,
           review: parsed.review,
-          tags: parsed.tags
+          tags: parsed.tags,
+          subitems
         });
       }
     }
@@ -419,6 +475,23 @@ class FocusTasksView extends ItemView {
       }
     }
 
+    if (task.subitems.length > 0) {
+      const subitemsWrap = details.createDiv("focus-tasks-subitems");
+      for (const item of task.subitems) {
+        const subRow = subitemsWrap.createDiv("focus-tasks-subitem");
+        if (item.kind === "task") {
+          subRow.createEl("input", {
+            type: "checkbox",
+            attr: { disabled: "true" }
+          }).checked = item.completed ?? false;
+          subRow.createEl("span", { text: item.text });
+        } else {
+          subRow.createEl("span", { text: "•" }).addClass("focus-tasks-subitem-bullet");
+          subRow.createEl("span", { text: item.text });
+        }
+      }
+    }
+
     const toggle = row.createEl("button", { text: "▸" });
     toggle.addClass("focus-tasks-toggle");
     toggle.addEventListener("click", () => {
@@ -595,6 +668,11 @@ function normalizeProjectName(value: string): string {
     return wikilinkMatch[1].trim();
   }
   return trimmed.replace(/#[-\w/]+/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function getIndentation(line: string): number {
+  const match = /^\s*/.exec(line);
+  return match ? match[0].length : 0;
 }
 
 function parseDate(value?: string): string | undefined {

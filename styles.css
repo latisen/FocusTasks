@@ -153,6 +153,27 @@
   align-items: center;
 }
 
+.focus-tasks-subitems {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-top: 4px;
+  border-top: 1px dashed var(--background-modifier-border);
+}
+
+.focus-tasks-subitem {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.focus-tasks-subitem-bullet {
+  width: 10px;
+  text-align: center;
+}
+
 .focus-tasks-date {
   display: flex;
   align-items: center;
