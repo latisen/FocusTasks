@@ -132,11 +132,11 @@
 }
 
 .focus-tasks-tag {
-  background: var(--background-modifier-hover);
+  background: var(--background-modifier-border);
   border-radius: 999px;
   padding: 1px 8px;
   font-size: 11px;
-  color: var(--text-muted);
+  color: var(--text-normal);
 }
 
 .focus-tasks-section {

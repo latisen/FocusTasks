@@ -318,9 +318,6 @@ class FocusTasksView extends ItemView {
       for (const tag of task.tags) {
         const tagEl = tagsWrap.createEl("span", { text: tag });
         tagEl.addClass("focus-tasks-tag");
-        const color = colorFromTag(tag);
-        tagEl.style.background = color.background;
-        tagEl.style.color = color.text;
       }
     }
   }
@@ -469,18 +466,6 @@ function parseDate(value?: string): string | undefined {
   return /^\d{4}-\d{2}-\d{2}$/.test(normalized) ? normalized : undefined;
 }
 
-function colorFromTag(tag: string): { background: string; text: string } {
-  const clean = tag.replace(/^#/, "").toLowerCase();
-  let hash = 0;
-  for (let i = 0; i < clean.length; i += 1) {
-    hash = (hash * 31 + clean.charCodeAt(i)) % 360;
-  }
-  const hue = hash;
-  return {
-    background: `hsl(${hue} 70% 90%)`,
-    text: `hsl(${hue} 35% 30%)`
-  };
-}
 
 async function updateTaskInFile(
   app: App,
