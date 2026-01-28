@@ -745,6 +745,7 @@ export default class FocusTasksPlugin extends Plugin {
           item.querySelector(".task-list-item-label") ||
           item.querySelector("label") ||
           item;
+        const taskText = (label as HTMLElement).textContent?.trim() ?? "";
 
         const button = document.createElement("button");
         button.className = "focus-tasks-inline-button";
@@ -760,7 +761,7 @@ export default class FocusTasksPlugin extends Plugin {
           const line = dataLine !== null
             ? Number(dataLine) + 1
             : sectionInfo.lineStart + 1;
-          const modal = new TaskEditModal(this.app, file, line, () => {
+          const modal = new TaskEditModal(this.app, file, line, taskText, () => {
             this.index.triggerRefresh();
           });
           modal.open();
@@ -799,12 +800,20 @@ export default class FocusTasksPlugin extends Plugin {
 class TaskEditModal extends Modal {
   private file: TFile;
   private line: number;
+  private taskText?: string;
   private onSave?: () => void;
 
-  constructor(app: App, file: TFile, line: number, onSave?: () => void) {
+  constructor(
+    app: App,
+    file: TFile,
+    line: number,
+    taskText?: string,
+    onSave?: () => void
+  ) {
     super(app);
     this.file = file;
     this.line = line;
+    this.taskText = taskText;
     this.onSave = onSave;
   }
 
@@ -902,7 +911,7 @@ class TaskEditModal extends Modal {
 
     let match: RegExpExecArray | null = null;
     let index = baseIndex;
-    const range = 3;
+    const range = 20;
     for (let offset = 0; offset <= range; offset += 1) {
       const forward = baseIndex + offset;
       if (forward >= 0 && forward < lines.length) {
@@ -924,6 +933,26 @@ class TaskEditModal extends Modal {
           match = backwardMatch;
           index = backward;
           break;
+        }
+      }
+    }
+
+    if (!match) {
+      if (this.taskText) {
+        const target = normalizeTaskText(this.taskText);
+        for (let i = 0; i < lines.length; i += 1) {
+          const candidate = /^(\s*[-*])\s+\[( |x|X)\]\s+(.*)$/.exec(
+            lines[i]
+          );
+          if (!candidate) {
+            continue;
+          }
+          const parsed = parseTaskMetadata(candidate[3].trim());
+          if (normalizeTaskText(parsed.text) === target) {
+            match = candidate;
+            index = i;
+            break;
+          }
         }
       }
     }
@@ -1092,6 +1121,10 @@ function normalizeTagList(value: string): string[] {
     .map((part) => normalizeTag(part))
     .filter((part) => part);
   return Array.from(new Set(parts));
+}
+
+function normalizeTaskText(value: string): string {
+  return value.replace(/\s+/g, " ").trim().toLowerCase();
 }
 
 function getIndentation(line: string): number {
