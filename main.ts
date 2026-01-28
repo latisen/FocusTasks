@@ -361,12 +361,15 @@ class FocusTasksView extends ItemView {
       const addTag = (value: string): void => {
         const tag = normalizeTag(value);
         if (!tag) {
+          input.value = "";
           return;
         }
         if (this.selectedTags.has(tag)) {
+          input.value = "";
           return;
         }
         this.selectedTags.add(tag);
+        input.value = "";
         this.render();
       };
 
@@ -386,6 +389,7 @@ class FocusTasksView extends ItemView {
         chip.addClass("focus-tasks-tag-chip");
         chip.addEventListener("click", () => {
           this.selectedTags.delete(tag);
+          input.value = "";
           this.render();
         });
       }
