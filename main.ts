@@ -53,6 +53,9 @@ class TaskIndex {
         }
 
         const parsed = parseTaskMetadata(match[2].trim());
+        if (!parsed.text) {
+          continue;
+        }
 
         tasks.push({
           file,
