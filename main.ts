@@ -736,7 +736,8 @@ export default class FocusTasksPlugin extends Plugin {
           continue;
         }
         const sectionInfo = ctx.getSectionInfo(item as HTMLElement);
-        if (!sectionInfo) {
+        const dataLine = (item as HTMLElement).getAttribute("data-line");
+        if (!sectionInfo && dataLine === null) {
           continue;
         }
 
@@ -756,7 +757,9 @@ export default class FocusTasksPlugin extends Plugin {
         button.addEventListener("click", (event) => {
           event.preventDefault();
           event.stopPropagation();
-          const line = sectionInfo.lineStart + 1;
+          const line = dataLine !== null
+            ? Number(dataLine) + 1
+            : sectionInfo.lineStart + 1;
           const modal = new TaskEditModal(this.app, file, line, () => {
             this.index.triggerRefresh();
           });
@@ -892,19 +895,46 @@ class TaskEditModal extends Modal {
   > {
     const content = await this.app.vault.read(this.file);
     const lines = content.split(/\r?\n/);
-    const index = this.line - 1;
-    if (index < 0 || index >= lines.length) {
+    const baseIndex = this.line - 1;
+    if (baseIndex < 0 || baseIndex >= lines.length) {
       return undefined;
     }
-    const lineText = lines[index];
-    const match = /^(\s*[-*])\s+\[( |x|X)\]\s+(.*)$/.exec(lineText);
+
+    let match: RegExpExecArray | null = null;
+    let index = baseIndex;
+    const range = 3;
+    for (let offset = 0; offset <= range; offset += 1) {
+      const forward = baseIndex + offset;
+      if (forward >= 0 && forward < lines.length) {
+        const forwardMatch = /^(\s*[-*])\s+\[( |x|X)\]\s+(.*)$/.exec(
+          lines[forward]
+        );
+        if (forwardMatch) {
+          match = forwardMatch;
+          index = forward;
+          break;
+        }
+      }
+      const backward = baseIndex - offset;
+      if (backward >= 0 && backward < lines.length) {
+        const backwardMatch = /^(\s*[-*])\s+\[( |x|X)\]\s+(.*)$/.exec(
+          lines[backward]
+        );
+        if (backwardMatch) {
+          match = backwardMatch;
+          index = backward;
+          break;
+        }
+      }
+    }
+
     if (!match) {
       return undefined;
     }
     const parsed = parseTaskMetadata(match[3].trim());
     const task: TaskItem = {
       file: this.file,
-      line: this.line,
+      line: index + 1,
       text: parsed.text,
       completed: match[2].toLowerCase() === "x",
       project: parsed.project,
