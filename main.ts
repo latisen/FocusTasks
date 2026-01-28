@@ -505,7 +505,7 @@ function groupTasksByProject(
     if (hideCompleted && task.completed) {
       continue;
     }
-    const project = getProjectName(app, task.file);
+    const project = task.project ?? getProjectName(app, task.file);
     if (!project) {
       continue;
     }
