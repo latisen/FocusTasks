@@ -896,11 +896,14 @@ export default class FocusTasksPlugin extends Plugin {
   async refreshCalendars(): Promise<void> {
     const urls = this.settings.calendarUrls.filter((url) => url.trim());
     const events = new Map<string, CalendarEvent[]>();
+    const rangeStart = getLocalDateString();
+    const rangeEnd = getLocalDateString(7);
 
     for (const url of urls) {
       try {
-        const response = await this.app.requestUrl({ url });
-        const parsed = parseIcsEvents(response.text ?? "");
+        const normalizedUrl = normalizeCalendarUrl(url);
+        const response = await this.app.requestUrl({ url: normalizedUrl });
+        const parsed = parseIcsEvents(response.text ?? "", rangeStart, rangeEnd);
         for (const event of parsed) {
           const list = events.get(event.date) ?? [];
           list.push(event);
@@ -1334,7 +1337,11 @@ function normalizeTaskText(value: string): string {
   return value.replace(/\s+/g, " ").trim().toLowerCase();
 }
 
-function parseIcsEvents(ics: string): CalendarEvent[] {
+function parseIcsEvents(
+  ics: string,
+  rangeStart?: string,
+  rangeEnd?: string
+): CalendarEvent[] {
   if (!ics.trim()) {
     return [];
   }
@@ -1342,38 +1349,62 @@ function parseIcsEvents(ics: string): CalendarEvent[] {
   const component = new ICAL.Component(jcal);
   const events = component.getAllSubcomponents("vevent");
   const parsed: CalendarEvent[] = [];
+  const startLimit = rangeStart ? new Date(rangeStart) : undefined;
+  const endLimit = rangeEnd ? new Date(rangeEnd) : undefined;
 
   for (const vevent of events) {
     const event = new ICAL.Event(vevent);
-    const start = event.startDate;
-    const end = event.endDate;
-    if (!start) {
+    if (!event.startDate) {
       continue;
     }
 
-    const allDay = start.isDate;
-    const startDate = start.toJSDate();
-    const endDate = end ? end.toJSDate() : start.toJSDate();
-
-    const dates = allDay
-      ? enumerateDates(
-          formatDate(startDate),
-          formatDate(new Date(endDate.getTime() - 86400000))
-        )
-      : enumerateDates(formatDate(startDate), formatDate(endDate));
-
-    for (const date of dates) {
-      parsed.push({
-        title: event.summary || "(Untitled)",
-        date,
-        allDay,
-        startTime: allDay ? undefined : formatTime(startDate),
-        location: event.location || undefined
-      });
+    if (event.isRecurring()) {
+      const iterator = event.iterator();
+      let next = iterator.next();
+      while (next) {
+        const occurrence = event.getOccurrenceDetails(next);
+        const occStart = occurrence.startDate.toJSDate();
+        if (startLimit && occStart < startLimit) {
+          next = iterator.next();
+          continue;
+        }
+        if (endLimit && occStart > endLimit) {
+          break;
+        }
+        parsed.push(...buildEventEntries(event, occurrence.startDate, occurrence.endDate));
+        next = iterator.next();
+      }
+      continue;
     }
+
+    parsed.push(...buildEventEntries(event, event.startDate, event.endDate));
   }
 
   return parsed;
+}
+
+function buildEventEntries(
+  event: ICAL.Event,
+  start: ICAL.Time,
+  end?: ICAL.Time
+): CalendarEvent[] {
+  const allDay = start.isDate;
+  const startDate = start.toJSDate();
+  const endDate = end ? end.toJSDate() : startDate;
+  const dates = allDay
+    ? enumerateDates(
+        formatDate(startDate),
+        formatDate(new Date(endDate.getTime() - 86400000))
+      )
+    : enumerateDates(formatDate(startDate), formatDate(endDate));
+
+  return dates.map((date) => ({
+    title: event.summary || "(Untitled)",
+    date,
+    allDay,
+    startTime: allDay ? undefined : formatTime(startDate),
+    location: event.location || undefined
+  }));
 }
 
 function formatDate(date: Date): string {
@@ -1385,6 +1416,14 @@ function formatDate(date: Date): string {
 
 function formatTime(date: Date): string {
   return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+function normalizeCalendarUrl(url: string): string {
+  const trimmed = url.trim();
+  if (trimmed.startsWith("webcal://")) {
+    return `https://${trimmed.slice("webcal://".length)}`;
+  }
+  return trimmed;
 }
 
 function getIndentation(line: string): number {
