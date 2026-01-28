@@ -39,16 +39,23 @@ type CalendarEvent = {
   title: string;
   date: string;
   startTime?: string;
+  endTime?: string;
   allDay: boolean;
   location?: string;
+  calendarName?: string;
+};
+
+type CalendarSource = {
+  name: string;
+  url: string;
 };
 
 type FocusTasksSettings = {
-  calendarUrls: string[];
+  calendarSources: CalendarSource[];
 };
 
 const DEFAULT_SETTINGS: FocusTasksSettings = {
-  calendarUrls: Array.from({ length: 10 }, () => "")
+  calendarSources: Array.from({ length: 10 }, () => ({ name: "", url: "" }))
 };
 
 class TaskIndex {
@@ -786,12 +793,16 @@ class FocusTasksView extends ItemView {
     const list = wrapper.createDiv("focus-tasks-events-list");
     for (const event of events) {
       const row = list.createDiv("focus-tasks-event");
-      if (event.allDay) {
-        row.createEl("span", { text: "Heldag" }).addClass("focus-tasks-event-time");
-      } else if (event.startTime) {
-        row.createEl("span", { text: event.startTime }).addClass("focus-tasks-event-time");
-      }
-      row.createEl("span", { text: event.title }).addClass("focus-tasks-event-title");
+      const timeLabel = event.allDay
+        ? "Heldag"
+        : `${event.startTime ?? ""} - ${event.endTime ?? ""}`.trim();
+      const calendarLabel = event.calendarName
+        ? ` (${event.calendarName})`
+        : "";
+      row.createEl("span", { text: timeLabel }).addClass("focus-tasks-event-time");
+      row
+        .createEl("span", { text: `${event.title}${calendarLabel}` })
+        .addClass("focus-tasks-event-title");
       if (event.location) {
         row.createEl("span", { text: event.location }).addClass("focus-tasks-event-location");
       }
@@ -900,11 +911,27 @@ export default class FocusTasksPlugin extends Plugin {
   }
 
   async loadSettings(): Promise<void> {
-    this.settings = Object.assign(
-      {},
-      DEFAULT_SETTINGS,
-      await this.loadData()
-    );
+    const data = (await this.loadData()) as Partial<FocusTasksSettings> & {
+      calendarUrls?: string[];
+    };
+
+    const sources = data.calendarSources ??
+      (data.calendarUrls
+        ? data.calendarUrls.map((url) => ({ name: "", url }))
+        : undefined);
+
+    this.settings = {
+      calendarSources: sources ?? DEFAULT_SETTINGS.calendarSources
+    };
+
+    if (this.settings.calendarSources.length < 10) {
+      this.settings.calendarSources = this.settings.calendarSources.concat(
+        Array.from({ length: 10 - this.settings.calendarSources.length }, () => ({
+          name: "",
+          url: ""
+        }))
+      );
+    }
   }
 
   async saveSettings(): Promise<void> {
@@ -913,7 +940,9 @@ export default class FocusTasksPlugin extends Plugin {
   }
 
   async refreshCalendars(): Promise<void> {
-    const urls = this.settings.calendarUrls.filter((url) => url.trim());
+    const sources = this.settings.calendarSources.filter((source) =>
+      source.url.trim()
+    );
     const events = new Map<string, CalendarEvent[]>();
     const rangeStart = getLocalDateString();
     const rangeEnd = getLocalDateString(7);
@@ -921,14 +950,19 @@ export default class FocusTasksPlugin extends Plugin {
     this.calendarSuccessCount = 0;
     this.calendarFailCount = 0;
 
-    for (const url of urls) {
+    for (const source of sources) {
       try {
-        const normalizedUrl = normalizeCalendarUrl(url);
+        const normalizedUrl = normalizeCalendarUrl(source.url);
         const response = await requestUrl({
           url: normalizedUrl,
           headers: { "User-Agent": "FocusTasks" }
         });
-        const parsed = parseIcsEvents(response.text ?? "", rangeStart, rangeEnd);
+        const parsed = parseIcsEvents(
+          response.text ?? "",
+          rangeStart,
+          rangeEnd,
+          source.name || getCalendarNameFromUrl(source.url)
+        );
         for (const event of parsed) {
           const list = events.get(event.date) ?? [];
           list.push(event);
@@ -1014,18 +1048,26 @@ class FocusTasksSettingTab extends PluginSettingTab {
       containerEl.createEl("p", { text: status.lastError });
     }
 
-    this.plugin.settings.calendarUrls.forEach((value, index) => {
-      new Setting(containerEl)
-        .setName(`ICS URL ${index + 1}`)
-        .addText((text) =>
-          text
-            .setPlaceholder("https://...")
-            .setValue(value)
-            .onChange(async (newValue) => {
-              this.plugin.settings.calendarUrls[index] = newValue.trim();
-              await this.plugin.saveSettings();
-            })
-        );
+    this.plugin.settings.calendarSources.forEach((source, index) => {
+      const setting = new Setting(containerEl).setName(`Kalender ${index + 1}`);
+      setting.addText((text) =>
+        text
+          .setPlaceholder("Namn")
+          .setValue(source.name)
+          .onChange(async (newValue) => {
+            this.plugin.settings.calendarSources[index].name = newValue.trim();
+            await this.plugin.saveSettings();
+          })
+      );
+      setting.addText((text) =>
+        text
+          .setPlaceholder("ICS URL")
+          .setValue(source.url)
+          .onChange(async (newValue) => {
+            this.plugin.settings.calendarSources[index].url = newValue.trim();
+            await this.plugin.saveSettings();
+          })
+      );
     });
   }
 }
@@ -1384,7 +1426,8 @@ function normalizeTaskText(value: string): string {
 function parseIcsEvents(
   ics: string,
   rangeStart?: string,
-  rangeEnd?: string
+  rangeEnd?: string,
+  calendarName?: string
 ): CalendarEvent[] {
   if (!ics.trim()) {
     return [];
@@ -1417,7 +1460,14 @@ function parseIcsEvents(
         if (endLimit && occStart > endLimit) {
           break;
         }
-        parsed.push(...buildEventEntries(event, occurrence.startDate, occurrence.endDate));
+        parsed.push(
+          ...buildEventEntries(
+            event,
+            occurrence.startDate,
+            occurrence.endDate,
+            calendarName
+          )
+        );
         next = iterator.next();
       }
       continue;
@@ -1430,7 +1480,9 @@ function parseIcsEvents(
     if (endLimit && singleStart > endLimit) {
       continue;
     }
-    parsed.push(...buildEventEntries(event, event.startDate, event.endDate));
+    parsed.push(
+      ...buildEventEntries(event, event.startDate, event.endDate, calendarName)
+    );
   }
 
   return parsed;
@@ -1439,7 +1491,8 @@ function parseIcsEvents(
 function buildEventEntries(
   event: ICAL.Event,
   start: ICAL.Time,
-  end?: ICAL.Time
+  end?: ICAL.Time,
+  calendarName?: string
 ): CalendarEvent[] {
   const allDay = start.isDate;
   const startDate = start.toJSDate();
@@ -1456,7 +1509,9 @@ function buildEventEntries(
     date,
     allDay,
     startTime: allDay ? undefined : formatTime(startDate),
-    location: event.location || undefined
+    endTime: allDay ? undefined : formatTime(endDate),
+    location: event.location || undefined,
+    calendarName
   }));
 }
 
@@ -1487,6 +1542,16 @@ function normalizeCalendarUrl(url: string): string {
     return `https://${trimmed.slice("webcal://".length)}`;
   }
   return trimmed;
+}
+
+function getCalendarNameFromUrl(url: string): string {
+  try {
+    const normalized = normalizeCalendarUrl(url);
+    const parsed = new URL(normalized);
+    return parsed.hostname;
+  } catch {
+    return "Kalender";
+  }
 }
 
 function getIndentation(line: string): number {

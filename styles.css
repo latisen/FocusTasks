@@ -190,7 +190,7 @@
 
 .focus-tasks-event {
   display: grid;
-  grid-template-columns: 60px 1fr auto;
+  grid-template-columns: 120px 1fr auto;
   gap: 8px;
   font-size: 12px;
   align-items: center;
