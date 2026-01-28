@@ -536,9 +536,9 @@ function getProjectName(app: App, file: TFile): string | undefined {
     return undefined;
   }
   if (Array.isArray(project)) {
-    return project.join(", ");
+    return project.map((value) => normalizeProjectName(String(value))).join(", ");
   }
-  return String(project);
+  return normalizeProjectName(String(project));
 }
 
 function sortTasksByDate(tasks: TaskItem[]): TaskItem[] {
