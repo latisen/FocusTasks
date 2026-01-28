@@ -343,6 +343,53 @@ class FocusTasksView extends ItemView {
       const filterBar = content.createDiv("focus-tasks-tag-filter");
       filterBar.createEl("div", { text: "Filter" }).addClass("focus-tasks-tag-title");
 
+      const selector = filterBar.createDiv("focus-tasks-tag-selector");
+      const inputId = `focus-tags-input-${Date.now()}`;
+      const datalistId = `focus-tags-list-${Date.now()}`;
+
+      const input = selector.createEl("input", {
+        type: "text",
+        attr: { placeholder: "Välj tagg", list: datalistId, id: inputId }
+      });
+      input.addClass("focus-tasks-tag-input");
+
+      const datalist = selector.createEl("datalist", { attr: { id: datalistId } });
+      for (const tag of tagSummary) {
+        datalist.createEl("option", { attr: { value: tag.name } });
+      }
+
+      const addTag = (value: string): void => {
+        const tag = value.trim();
+        if (!tag) {
+          return;
+        }
+        if (this.selectedTags.has(tag)) {
+          return;
+        }
+        this.selectedTags.add(tag);
+        this.render();
+      };
+
+      input.addEventListener("change", () => {
+        addTag(input.value);
+      });
+      input.addEventListener("keydown", (event) => {
+        if (event.key === "Enter") {
+          event.preventDefault();
+          addTag(input.value);
+        }
+      });
+
+      const selectedWrap = filterBar.createDiv("focus-tasks-tag-selected");
+      for (const tag of Array.from(this.selectedTags)) {
+        const chip = selectedWrap.createEl("button", { text: tag });
+        chip.addClass("focus-tasks-tag-chip");
+        chip.addEventListener("click", () => {
+          this.selectedTags.delete(tag);
+          this.render();
+        });
+      }
+
       const clearButton = filterBar.createEl("button", {
         text: "Rensa"
       });
@@ -352,25 +399,8 @@ class FocusTasksView extends ItemView {
         this.render();
       });
 
-      const tagList = filterBar.createDiv("focus-tasks-tag-list");
       if (tagSummary.length === 0) {
-        tagList.createEl("div", { text: "Inga taggar." });
-      } else {
-        for (const tag of tagSummary) {
-          const tagButton = tagList.createEl("button", {
-            text: `${tag.name} (${tag.count})`
-          });
-          tagButton.addClass("focus-tasks-tag-filter-item");
-          tagButton.toggleClass("is-selected", this.selectedTags.has(tag.name));
-          tagButton.addEventListener("click", () => {
-            if (this.selectedTags.has(tag.name)) {
-              this.selectedTags.delete(tag.name);
-            } else {
-              this.selectedTags.add(tag.name);
-            }
-            this.render();
-          });
-        }
+        filterBar.createEl("div", { text: "Inga taggar." });
       }
 
       this.listEl = content.createDiv("focus-tasks-list");
