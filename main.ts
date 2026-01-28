@@ -1349,8 +1349,8 @@ function parseIcsEvents(
   const component = new ICAL.Component(jcal);
   const events = component.getAllSubcomponents("vevent");
   const parsed: CalendarEvent[] = [];
-  const startLimit = rangeStart ? new Date(rangeStart) : undefined;
-  const endLimit = rangeEnd ? new Date(rangeEnd) : undefined;
+  const startLimit = rangeStart ? startOfDay(rangeStart) : undefined;
+  const endLimit = rangeEnd ? endOfDay(rangeEnd) : undefined;
 
   for (const vevent of events) {
     const event = new ICAL.Event(vevent);
@@ -1359,7 +1359,9 @@ function parseIcsEvents(
     }
 
     if (event.isRecurring()) {
-      const iterator = event.iterator();
+      const iterator = event.iterator(
+        startLimit ? ICAL.Time.fromJSDate(startLimit) : undefined
+      );
       let next = iterator.next();
       while (next) {
         const occurrence = event.getOccurrenceDetails(next);
@@ -1377,6 +1379,13 @@ function parseIcsEvents(
       continue;
     }
 
+    const singleStart = event.startDate.toJSDate();
+    if (startLimit && singleStart < startLimit) {
+      continue;
+    }
+    if (endLimit && singleStart > endLimit) {
+      continue;
+    }
     parsed.push(...buildEventEntries(event, event.startDate, event.endDate));
   }
 
@@ -1416,6 +1425,16 @@ function formatDate(date: Date): string {
 
 function formatTime(date: Date): string {
   return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+function startOfDay(date: string): Date {
+  const [year, month, day] = date.split("-").map(Number);
+  return new Date(year, month - 1, day, 0, 0, 0, 0);
+}
+
+function endOfDay(date: string): Date {
+  const [year, month, day] = date.split("-").map(Number);
+  return new Date(year, month - 1, day, 23, 59, 59, 999);
 }
 
 function normalizeCalendarUrl(url: string): string {
