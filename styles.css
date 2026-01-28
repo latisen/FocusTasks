@@ -82,8 +82,37 @@
   font-size: 12px;
 }
 
-.focus-tasks-meta {
-  display: block;
+.focus-tasks-main {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.focus-tasks-text-input {
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  padding: 4px 6px;
+  background: var(--background-primary);
+}
+
+.focus-tasks-meta-row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.focus-tasks-date {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   color: var(--text-muted);
   font-size: 12px;
+}
+
+.focus-tasks-date input {
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  padding: 2px 6px;
+  font-size: 12px;
+  background: var(--background-primary);
 }

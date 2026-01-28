@@ -15,6 +15,7 @@ type TaskItem = {
   text: string;
   completed: boolean;
   project?: string;
+  planned?: string;
   due?: string;
 };
 
@@ -58,6 +59,7 @@ class TaskIndex {
           text: parsed.text,
           completed: match[1].toLowerCase() === "x",
           project: parsed.project,
+          planned: parsed.planned,
           due: parsed.due
         });
       }
@@ -133,7 +135,7 @@ class FocusTasksView extends ItemView {
         return false;
       }
       if (this.selectedSection === "inbox") {
-        return !task.project && !task.due;
+        return !task.project && !task.due && !task.planned;
       }
       return true;
     });
@@ -152,15 +154,52 @@ class FocusTasksView extends ItemView {
         attr: { disabled: "true" }
       }).checked = task.completed;
 
-      const text = row.createEl("span", { text: task.text });
-      text.addClass("focus-tasks-text");
+      const main = row.createDiv("focus-tasks-main");
 
-      if (task.project || task.due) {
-        const meta = row.createEl("span", {
-          text: [task.project, task.due].filter(Boolean).join(" • ")
-        });
-        meta.addClass("focus-tasks-meta");
-      }
+      const textInput = main.createEl("input", {
+        type: "text"
+      });
+      textInput.value = task.text;
+      textInput.addClass("focus-tasks-text-input");
+      textInput.addEventListener("blur", () => {
+        if (textInput.value.trim() === task.text) {
+          return;
+        }
+        updateTaskInFile(this.app, task, { text: textInput.value.trim() })
+          .then(() => this.index.triggerRefresh())
+          .catch(console.error);
+      });
+      textInput.addEventListener("keydown", (event) => {
+        if (event.key === "Enter") {
+          textInput.blur();
+        }
+      });
+
+      const metaRow = main.createDiv("focus-tasks-meta-row");
+
+      const plannedWrap = metaRow.createDiv("focus-tasks-date");
+      plannedWrap.createEl("span", { text: "Planerad" });
+      const plannedInput = plannedWrap.createEl("input", { type: "date" });
+      plannedInput.value = task.planned ?? "";
+      plannedInput.addEventListener("change", () => {
+        updateTaskInFile(this.app, task, {
+          planned: plannedInput.value || undefined
+        })
+          .then(() => this.index.triggerRefresh())
+          .catch(console.error);
+      });
+
+      const dueWrap = metaRow.createDiv("focus-tasks-date");
+      dueWrap.createEl("span", { text: "Due" });
+      const dueInput = dueWrap.createEl("input", { type: "date" });
+      dueInput.value = task.due ?? "";
+      dueInput.addEventListener("change", () => {
+        updateTaskInFile(this.app, task, {
+          due: dueInput.value || undefined
+        })
+          .then(() => this.index.triggerRefresh())
+          .catch(console.error);
+      });
 
       const openButton = row.createEl("button", {
         text: task.file.basename
@@ -232,23 +271,88 @@ export default class FocusTasksPlugin extends Plugin {
 function parseTaskMetadata(rawText: string): {
   text: string;
   project?: string;
+  planned?: string;
   due?: string;
 } {
   let text = rawText;
   let project: string | undefined;
+  let planned: string | undefined;
   let due: string | undefined;
 
-  const projectMatch = /(?:^|\s)project::\s*([^\n]+?)(?=\s+due::|$)/i.exec(text);
-  if (projectMatch) {
-    project = projectMatch[1].trim();
-    text = text.replace(projectMatch[0], " ");
+  const projectResult = extractMetadata(text, "project");
+  project = projectResult.value;
+  text = projectResult.text;
+
+  const plannedResult = extractMetadata(text, "planned");
+  planned = plannedResult.value;
+  text = plannedResult.text;
+
+  const dueResult = extractMetadata(text, "due");
+  due = dueResult.value;
+  text = dueResult.text;
+
+  return { text: text.trim(), project, planned, due };
+}
+
+function extractMetadata(
+  text: string,
+  key: "project" | "planned" | "due"
+): { text: string; value?: string } {
+  const regex = new RegExp(
+    `(?:^|\\s)${key}::\\s*([^\\n]+?)(?=\\s+\\w+::|$)`,
+    "i"
+  );
+  const match = regex.exec(text);
+  if (!match) {
+    return { text };
+  }
+  return {
+    text: text.replace(match[0], " "),
+    value: match[1].trim()
+  };
+}
+
+async function updateTaskInFile(
+  app: App,
+  task: TaskItem,
+  updates: { text?: string; project?: string; planned?: string; due?: string }
+): Promise<void> {
+  const content = await app.vault.read(task.file);
+  const lines = content.split(/\r?\n/);
+  const index = task.line - 1;
+
+  if (index < 0 || index >= lines.length) {
+    return;
   }
 
-  const dueMatch = /(?:^|\s)due::\s*([0-9]{4}-[0-9]{2}-[0-9]{2})/i.exec(text);
-  if (dueMatch) {
-    due = dueMatch[1];
-    text = text.replace(dueMatch[0], " ");
+  const lineText = lines[index];
+  const match = /^(\s*[-*])\s+\[( |x|X)\]\s+(.*)$/.exec(lineText);
+  if (!match) {
+    return;
   }
 
-  return { text: text.trim(), project, due };
+  const bullet = match[1];
+  const checkbox = match[2];
+  const current = parseTaskMetadata(match[3]);
+
+  const text = (updates.text ?? current.text).trim();
+  const project = updates.project ?? current.project;
+  const planned = updates.planned ?? current.planned;
+  const due = updates.due ?? current.due;
+
+  const metaParts: string[] = [];
+  if (project) {
+    metaParts.push(`project:: ${project}`);
+  }
+  if (planned) {
+    metaParts.push(`planned:: ${planned}`);
+  }
+  if (due) {
+    metaParts.push(`due:: ${due}`);
+  }
+
+  const meta = metaParts.length > 0 ? ` ${metaParts.join(" ")}` : "";
+  lines[index] = `${bullet} [${checkbox}] ${text}${meta}`.trimEnd();
+
+  await app.vault.modify(task.file, lines.join("\n"));
 }
