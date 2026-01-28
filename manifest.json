@@ -1,0 +1,10 @@
+{
+  "id": "focus-tasks",
+  "name": "FocusTasks",
+  "version": "0.1.0",
+  "minAppVersion": "1.5.0",
+  "description": "OmniFocus-like task management for Obsidian",
+  "author": "latisen",
+  "authorUrl": "",
+  "isDesktopOnly": false
+}

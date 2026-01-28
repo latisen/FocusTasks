@@ -1,0 +1,17 @@
+{
+  "name": "focus-tasks",
+  "version": "0.1.0",
+  "description": "Obsidian plugin for OmniFocus-like task management",
+  "main": "main.js",
+  "type": "module",
+  "scripts": {
+    "build": "node esbuild.config.mjs production",
+    "dev": "node esbuild.config.mjs dev --watch"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.24",
+    "esbuild": "^0.20.2",
+    "obsidian": "^1.5.12",
+    "typescript": "^5.4.5"
+  }
+}
