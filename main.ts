@@ -402,9 +402,13 @@ function extractMetadata(
   if (!match) {
     return { text };
   }
+  let value = match[1].trim();
+  if (key === "planned" || key === "due") {
+    value = normalizeDateString(value);
+  }
   return {
     text: text.replace(match[0], " "),
-    value: match[1].trim()
+    value
   };
 }
 
@@ -423,6 +427,14 @@ function getLocalDateString(addDays = 0): string {
   const month = String(date.getMonth() + 1).padStart(2, "0");
   const day = String(date.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
+}
+
+function normalizeDateString(value: string): string {
+  const token = value.split(/\s+/)[0];
+  if (/^\d{4}-\d{2}-\d{2}$/.test(token)) {
+    return token;
+  }
+  return value.trim();
 }
 
 async function updateTaskInFile(
