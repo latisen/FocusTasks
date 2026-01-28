@@ -740,7 +740,9 @@ export default class FocusTasksPlugin extends Plugin {
           continue;
         }
 
-        const button = item.createEl("button", {
+        const label = item.querySelector("label") ?? item;
+
+        const button = (label as HTMLElement).createEl("button", {
           cls: "focus-tasks-inline-button",
           attr: { title: "Edit FocusTasks" }
         });
