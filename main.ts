@@ -286,6 +286,7 @@ class FocusTasksView extends ItemView {
     const row = container.createDiv("focus-tasks-item");
     row.toggleClass("is-complete", task.completed);
     row.toggleClass("is-collapsed", !this.expandedTasks.has(taskKey));
+    row.toggleClass("is-overdue", isTaskOverdue(task, getLocalDateString()));
 
     row.createEl("input", {
       type: "checkbox",
@@ -530,6 +531,21 @@ function parseDate(value?: string): string | undefined {
   }
   const normalized = normalizeDateString(value);
   return /^\d{4}-\d{2}-\d{2}$/.test(normalized) ? normalized : undefined;
+}
+
+function isTaskOverdue(task: TaskItem, today: string): boolean {
+  if (task.completed) {
+    return false;
+  }
+  const plannedDate = parseDate(task.planned);
+  const dueDate = parseDate(task.due);
+  if (dueDate) {
+    return dueDate < today;
+  }
+  if (plannedDate) {
+    return plannedDate < today;
+  }
+  return false;
 }
 
 function groupTasksByProject(

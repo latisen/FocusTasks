@@ -68,6 +68,10 @@
   border: 1px solid var(--background-modifier-border);
 }
 
+.focus-tasks-item.is-overdue {
+  border-color: var(--text-error);
+}
+
 .focus-tasks-item.is-complete {
   opacity: 0.6;
   text-decoration: line-through;
