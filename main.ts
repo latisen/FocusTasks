@@ -256,6 +256,29 @@ class FocusTasksView extends ItemView {
         return;
       }
 
+      const overview = content.createDiv("focus-tasks-project-overview");
+      for (const [projectName, tasks] of projects) {
+        const openCount = tasks.filter((task) => !task.completed).length;
+        const nextAction = getNextAction(tasks);
+        const lastReview = getLastReview(tasks);
+
+        const card = overview.createDiv("focus-tasks-project-card");
+        card.createEl("div", { text: projectName }).addClass("focus-tasks-project-name");
+        card.createEl("div", { text: `${openCount} öppna` }).addClass("focus-tasks-project-count");
+
+        if (nextAction) {
+          card
+            .createEl("div", { text: `Nästa: ${nextAction}` })
+            .addClass("focus-tasks-project-next");
+        }
+
+        if (lastReview) {
+          card
+            .createEl("div", { text: `Senast review: ${lastReview}` })
+            .addClass("focus-tasks-project-review");
+        }
+      }
+
       for (const [projectName, tasks] of projects) {
         const sorted = sortTasksByDate(tasks);
         this.renderSection(content, projectName, sorted, `project:${projectName}`);
@@ -755,6 +778,23 @@ function sortTasksByDate(tasks: TaskItem[]): TaskItem[] {
     }
     return a.text.localeCompare(b.text);
   });
+}
+
+function getNextAction(tasks: TaskItem[]): string | undefined {
+  const openTasks = tasks.filter((task) => !task.completed);
+  if (openTasks.length === 0) {
+    return undefined;
+  }
+  const sorted = sortTasksByDate(openTasks);
+  return sorted[0]?.text;
+}
+
+function getLastReview(tasks: TaskItem[]): string | undefined {
+  const reviews = tasks
+    .map((task) => parseDate(task.review))
+    .filter((value): value is string => !!value)
+    .sort((a, b) => b.localeCompare(a));
+  return reviews[0];
 }
 
 

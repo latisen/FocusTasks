@@ -223,3 +223,31 @@
 .focus-tasks-section-toggle {
   font-size: 12px;
 }
+
+.focus-tasks-project-overview {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.focus-tasks-project-card {
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: var(--background-secondary);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.focus-tasks-project-name {
+  font-weight: 600;
+}
+
+.focus-tasks-project-count,
+.focus-tasks-project-next,
+.focus-tasks-project-review {
+  font-size: 12px;
+  color: var(--text-muted);
+}
