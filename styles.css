@@ -204,6 +204,31 @@
   color: var(--text-normal);
 }
 
+.focus-tasks-inline-button {
+  margin-left: 6px;
+  padding: 0 4px;
+  height: 18px;
+}
+
+.focus-tasks-inline-button svg {
+  width: 14px;
+  height: 14px;
+}
+
+.focus-tasks-modal-input {
+  width: 100%;
+  margin-bottom: 8px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  padding: 6px 8px;
+  font-size: 13px;
+  background: var(--background-primary);
+}
+
+.focus-tasks-modal-save {
+  margin-top: 8px;
+}
+
 .focus-tasks-section {
   display: flex;
   flex-direction: column;

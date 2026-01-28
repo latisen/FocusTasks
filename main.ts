@@ -1,10 +1,12 @@
 import {
   App,
   ItemView,
+  Modal,
   Plugin,
   TFile,
   WorkspaceLeaf,
-  debounce
+  debounce,
+  setIcon
 } from "obsidian";
 
 const VIEW_TYPE = "focus-tasks-view";
@@ -722,6 +724,40 @@ export default class FocusTasksPlugin extends Plugin {
       this.app.vault.on("rename", (file) => this.onFileChange(file))
     );
 
+    this.registerMarkdownPostProcessor((el, ctx) => {
+      const file = this.app.vault.getAbstractFileByPath(ctx.sourcePath ?? "");
+      if (!(file instanceof TFile)) {
+        return;
+      }
+
+      const items = el.querySelectorAll("li.task-list-item");
+      for (const item of Array.from(items)) {
+        if (item.querySelector(".focus-tasks-inline-button")) {
+          continue;
+        }
+        const sectionInfo = ctx.getSectionInfo(item as HTMLElement);
+        if (!sectionInfo) {
+          continue;
+        }
+
+        const button = item.createEl("button", {
+          cls: "focus-tasks-inline-button",
+          attr: { title: "Edit FocusTasks" }
+        });
+        setIcon(button, "check-square");
+
+        button.addEventListener("click", (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          const line = sectionInfo.lineStart + 1;
+          const modal = new TaskEditModal(this.app, file, line, () => {
+            this.index.triggerRefresh();
+          });
+          modal.open();
+        });
+      }
+    });
+
     await this.index.refresh();
   }
 
@@ -747,6 +783,132 @@ export default class FocusTasksPlugin extends Plugin {
     }
 
     workspace.revealLeaf(leaf);
+  }
+}
+
+class TaskEditModal extends Modal {
+  private file: TFile;
+  private line: number;
+  private onSave?: () => void;
+
+  constructor(app: App, file: TFile, line: number, onSave?: () => void) {
+    super(app);
+    this.file = file;
+    this.line = line;
+    this.onSave = onSave;
+  }
+
+  async onOpen(): Promise<void> {
+    const { contentEl } = this;
+    contentEl.empty();
+    contentEl.createEl("h3", { text: "Uppgift" });
+
+    const taskData = await this.loadTaskData();
+    if (!taskData) {
+      contentEl.createEl("p", { text: "Kunde inte läsa uppgiften." });
+      return;
+    }
+
+    const { task } = taskData;
+
+    const titleInput = contentEl.createEl("input", {
+      type: "text",
+      value: task.text,
+      attr: { placeholder: "Titel" }
+    });
+    titleInput.addClass("focus-tasks-modal-input");
+
+    const projectInput = contentEl.createEl("input", {
+      type: "text",
+      value: task.project ?? "",
+      attr: { placeholder: "Project" }
+    });
+    projectInput.addClass("focus-tasks-modal-input");
+
+    const contextInput = contentEl.createEl("input", {
+      type: "text",
+      value: task.context ?? "",
+      attr: { placeholder: "Kontext" }
+    });
+    contextInput.addClass("focus-tasks-modal-input");
+
+    const plannedInput = contentEl.createEl("input", {
+      type: "date",
+      value: task.planned ?? ""
+    });
+    plannedInput.addClass("focus-tasks-modal-input");
+
+    const dueInput = contentEl.createEl("input", {
+      type: "date",
+      value: task.due ?? ""
+    });
+    dueInput.addClass("focus-tasks-modal-input");
+
+    const reviewInput = contentEl.createEl("input", {
+      type: "date",
+      value: task.review ?? ""
+    });
+    reviewInput.addClass("focus-tasks-modal-input");
+
+    const tagsInput = contentEl.createEl("input", {
+      type: "text",
+      value: task.tags.join(", "),
+      attr: { placeholder: "Taggar (komma-separerat)" }
+    });
+    tagsInput.addClass("focus-tasks-modal-input");
+
+    const saveButton = contentEl.createEl("button", { text: "Spara" });
+    saveButton.addClass("focus-tasks-modal-save");
+    saveButton.addEventListener("click", async () => {
+      const tags = normalizeTagList(tagsInput.value);
+      await updateTaskInFile(this.app, taskData.taskRef, {
+        text: titleInput.value.trim() || task.text,
+        project: projectInput.value.trim() || undefined,
+        context: contextInput.value.trim() || undefined,
+        planned: plannedInput.value || undefined,
+        due: dueInput.value || undefined,
+        review: reviewInput.value || undefined,
+        tags
+      });
+      this.onSave?.();
+      this.close();
+    });
+  }
+
+  onClose(): void {
+    this.contentEl.empty();
+  }
+
+  private async loadTaskData(): Promise<
+    | { task: TaskItem; taskRef: TaskItem }
+    | undefined
+  > {
+    const content = await this.app.vault.read(this.file);
+    const lines = content.split(/\r?\n/);
+    const index = this.line - 1;
+    if (index < 0 || index >= lines.length) {
+      return undefined;
+    }
+    const lineText = lines[index];
+    const match = /^(\s*[-*])\s+\[( |x|X)\]\s+(.*)$/.exec(lineText);
+    if (!match) {
+      return undefined;
+    }
+    const parsed = parseTaskMetadata(match[3].trim());
+    const task: TaskItem = {
+      file: this.file,
+      line: this.line,
+      text: parsed.text,
+      completed: match[2].toLowerCase() === "x",
+      project: parsed.project,
+      context: parsed.context,
+      planned: parsed.planned,
+      due: parsed.due,
+      review: parsed.review,
+      tags: parsed.tags,
+      subitems: []
+    };
+    return { task, taskRef: task };
   }
 }
 
@@ -885,6 +1047,14 @@ function normalizeTag(value: string): string {
   }
   const withHash = trimmed.startsWith("#") ? trimmed : `#${trimmed}`;
   return withHash.toLowerCase();
+}
+
+function normalizeTagList(value: string): string[] {
+  const parts = value
+    .split(/[,\s]+/)
+    .map((part) => normalizeTag(part))
+    .filter((part) => part);
+  return Array.from(new Set(parts));
 }
 
 function getIndentation(line: string): number {
@@ -1045,6 +1215,7 @@ async function updateTaskInFile(
     due?: string;
     review?: string;
     completed?: boolean;
+    tags?: string[];
   }
 ): Promise<void> {
   const content = await app.vault.read(task.file);
@@ -1072,6 +1243,7 @@ async function updateTaskInFile(
   const due = updates.due ?? current.due;
   const review = updates.review ?? current.review;
   const completed = updates.completed ?? task.completed;
+  const tagsList = updates.tags ?? current.tags;
 
   const metaParts: string[] = [];
   const projectKey = /(?:^|\s)projekt::/i.test(match[3])
@@ -1096,7 +1268,7 @@ async function updateTaskInFile(
     metaParts.push(`review:: ${review}`);
   }
 
-  const tags = current.tags.length > 0 ? ` ${current.tags.join(" ")}` : "";
+  const tags = tagsList.length > 0 ? ` ${tagsList.join(" ")}` : "";
 
   const meta = metaParts.length > 0 ? ` ${metaParts.join(" ")}` : "";
   const checkboxValue = completed ? "x" : " ";
