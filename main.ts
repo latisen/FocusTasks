@@ -421,7 +421,9 @@ function parseTaskMetadata(rawText: string): {
   let due: string | undefined;
 
   const projectResult = extractMetadata(text, "project");
-  project = projectResult.value;
+  project = projectResult.value
+    ? normalizeProjectName(projectResult.value)
+    : undefined;
   text = projectResult.text;
 
   const plannedResult = extractMetadata(text, "planned");
@@ -485,6 +487,15 @@ function normalizeDateString(value: string): string {
     return token;
   }
   return value.trim();
+}
+
+function normalizeProjectName(value: string): string {
+  const trimmed = value.trim();
+  const wikilinkMatch = /^\[\[([^\]]+)\]\]$/.exec(trimmed);
+  if (wikilinkMatch) {
+    return wikilinkMatch[1].trim();
+  }
+  return trimmed;
 }
 
 function parseDate(value?: string): string | undefined {
