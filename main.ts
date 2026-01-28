@@ -421,10 +421,16 @@ function parseTaskMetadata(rawText: string): {
   let due: string | undefined;
 
   const projectResult = extractMetadata(text, "project");
-  project = projectResult.value
-    ? normalizeProjectName(projectResult.value)
-    : undefined;
-  text = projectResult.text;
+  if (projectResult.value) {
+    project = normalizeProjectName(projectResult.value);
+    text = projectResult.text;
+  } else {
+    const projectAlt = extractMetadata(text, "projekt");
+    project = projectAlt.value
+      ? normalizeProjectName(projectAlt.value)
+      : undefined;
+    text = projectAlt.text;
+  }
 
   const plannedResult = extractMetadata(text, "planned");
   planned = plannedResult.value;
@@ -442,7 +448,7 @@ function parseTaskMetadata(rawText: string): {
 
 function extractMetadata(
   text: string,
-  key: "project" | "planned" | "due"
+  key: "project" | "projekt" | "planned" | "due"
 ): { text: string; value?: string } {
   const regex = new RegExp(
     `(?:^|\\s)${key}::\\s*([^\\n]+?)(?=\\s+\\w+::|$)`,
@@ -588,8 +594,11 @@ async function updateTaskInFile(
   const due = updates.due ?? current.due;
 
   const metaParts: string[] = [];
+  const projectKey = /(?:^|\s)projekt::/i.test(match[3])
+    ? "projekt"
+    : "project";
   if (project) {
-    metaParts.push(`project:: ${project}`);
+    metaParts.push(`${projectKey}:: ${project}`);
   }
   if (planned) {
     metaParts.push(`planned:: ${planned}`);
