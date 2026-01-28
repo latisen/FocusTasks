@@ -385,10 +385,17 @@ class FocusTasksView extends ItemView {
     row.toggleClass("is-collapsed", !this.expandedTasks.has(taskKey));
     row.toggleClass("is-overdue", isTaskOverdue(task, getLocalDateString()));
 
-    row.createEl("input", {
+    const checkboxInput = row.createEl("input", {
       type: "checkbox",
-      attr: { disabled: "true" }
-    }).checked = task.completed;
+    });
+    checkboxInput.checked = task.completed;
+    checkboxInput.addEventListener("change", () => {
+      updateTaskInFile(this.app, task, {
+        completed: checkboxInput.checked
+      })
+        .then(() => this.index.triggerRefresh())
+        .catch(console.error);
+    });
 
     const main = row.createDiv("focus-tasks-main");
 
@@ -760,6 +767,7 @@ async function updateTaskInFile(
     planned?: string;
     due?: string;
     review?: string;
+    completed?: boolean;
   }
 ): Promise<void> {
   const content = await app.vault.read(task.file);
@@ -785,6 +793,7 @@ async function updateTaskInFile(
   const planned = updates.planned ?? current.planned;
   const due = updates.due ?? current.due;
   const review = updates.review ?? current.review;
+  const completed = updates.completed ?? task.completed;
 
   const metaParts: string[] = [];
   const projectKey = /(?:^|\s)projekt::/i.test(match[3])
@@ -806,7 +815,8 @@ async function updateTaskInFile(
   const tags = current.tags.length > 0 ? ` ${current.tags.join(" ")}` : "";
 
   const meta = metaParts.length > 0 ? ` ${metaParts.join(" ")}` : "";
-  lines[index] = `${bullet} [${checkbox}] ${text}${meta}${tags}`.trimEnd();
+  const checkboxValue = completed ? "x" : " ";
+  lines[index] = `${bullet} [${checkboxValue}] ${text}${meta}${tags}`.trimEnd();
 
   await app.vault.modify(task.file, lines.join("\n"));
 }
