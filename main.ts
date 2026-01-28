@@ -803,6 +803,8 @@ export default class FocusTasksPlugin extends Plugin {
   public settings: FocusTasksSettings = DEFAULT_SETTINGS;
   private calendarEvents = new Map<string, CalendarEvent[]>();
   private calendarInterval?: number;
+  private calendarLastRefresh?: string;
+  private calendarLastError?: string;
 
   async onload(): Promise<void> {
     this.index = new TaskIndex(this.app);
@@ -865,7 +867,7 @@ export default class FocusTasksPlugin extends Plugin {
     await this.refreshCalendars();
     this.calendarInterval = window.setInterval(
       () => this.refreshCalendars(),
-      10 * 60 * 1000
+      5 * 60 * 1000
     );
   }
 
@@ -878,6 +880,13 @@ export default class FocusTasksPlugin extends Plugin {
 
   getEventsForDate(date: string): CalendarEvent[] {
     return this.calendarEvents.get(date) ?? [];
+  }
+
+  getCalendarStatus(): { lastRefresh?: string; lastError?: string } {
+    return {
+      lastRefresh: this.calendarLastRefresh,
+      lastError: this.calendarLastError
+    };
   }
 
   async loadSettings(): Promise<void> {
@@ -898,6 +907,7 @@ export default class FocusTasksPlugin extends Plugin {
     const events = new Map<string, CalendarEvent[]>();
     const rangeStart = getLocalDateString();
     const rangeEnd = getLocalDateString(7);
+    this.calendarLastError = undefined;
 
     for (const url of urls) {
       try {
@@ -911,6 +921,7 @@ export default class FocusTasksPlugin extends Plugin {
         }
       } catch (error) {
         console.error("Calendar fetch failed", error);
+        this.calendarLastError = "Kunde inte läsa en eller flera kalendrar.";
       }
     }
 
@@ -922,6 +933,7 @@ export default class FocusTasksPlugin extends Plugin {
     }
 
     this.calendarEvents = events;
+    this.calendarLastRefresh = new Date().toLocaleString();
     this.refreshViews();
   }
 
@@ -969,6 +981,15 @@ class FocusTasksSettingTab extends PluginSettingTab {
     containerEl.createEl("p", {
       text: "Fyll i upp till 10 ICS‑URLer. Lämna tomt för att inaktivera."
     });
+
+    const status = this.plugin.getCalendarStatus();
+    const statusText = status.lastRefresh
+      ? `Senast uppdaterad: ${status.lastRefresh}`
+      : "Ingen uppdatering ännu.";
+    containerEl.createEl("p", { text: statusText });
+    if (status.lastError) {
+      containerEl.createEl("p", { text: status.lastError });
+    }
 
     this.plugin.settings.calendarUrls.forEach((value, index) => {
       new Setting(containerEl)
