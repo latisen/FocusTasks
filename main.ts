@@ -81,6 +81,7 @@ class FocusTasksView extends ItemView {
   private listEl?: HTMLElement;
   private selectedSection: "inbox" | "today" | "projects" = "inbox";
   private sectionExpanded = new Map<string, boolean>();
+  private expandedTasks = new Set<string>();
 
   constructor(leaf: WorkspaceLeaf, index: TaskIndex) {
     super(leaf);
@@ -281,8 +282,21 @@ class FocusTasksView extends ItemView {
   }
 
   private renderTaskRow(task: TaskItem, container: HTMLElement): void {
+    const taskKey = `${task.file.path}:${task.line}`;
     const row = container.createDiv("focus-tasks-item");
     row.toggleClass("is-complete", task.completed);
+    row.toggleClass("is-collapsed", !this.expandedTasks.has(taskKey));
+
+    const toggle = row.createEl("button", { text: "▸" });
+    toggle.addClass("focus-tasks-toggle");
+    toggle.addEventListener("click", () => {
+      if (this.expandedTasks.has(taskKey)) {
+        this.expandedTasks.delete(taskKey);
+      } else {
+        this.expandedTasks.add(taskKey);
+      }
+      this.render();
+    });
 
     row.createEl("input", {
       type: "checkbox",
@@ -291,7 +305,9 @@ class FocusTasksView extends ItemView {
 
     const main = row.createDiv("focus-tasks-main");
 
-    const textInput = main.createEl("input", {
+    const headerRow = main.createDiv("focus-tasks-header-row");
+
+    const textInput = headerRow.createEl("input", {
       type: "text"
     });
     textInput.value = task.text;
@@ -310,7 +326,8 @@ class FocusTasksView extends ItemView {
       }
     });
 
-    const noteRow = main.createDiv("focus-tasks-note-row");
+    const details = main.createDiv("focus-tasks-details");
+    const noteRow = details.createDiv("focus-tasks-note-row");
     const openButton = noteRow.createEl("button", {
       text: task.file.basename
     });
@@ -319,7 +336,7 @@ class FocusTasksView extends ItemView {
       this.app.workspace.getLeaf(false).openFile(task.file);
     });
 
-    const metaRow = main.createDiv("focus-tasks-meta-row");
+    const metaRow = details.createDiv("focus-tasks-meta-row");
 
     const plannedWrap = metaRow.createDiv("focus-tasks-date");
     plannedWrap.createEl("span", { text: "Planerad" });
