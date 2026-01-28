@@ -169,21 +169,38 @@ class FocusTasksView extends ItemView {
       if (!this.showCompleted && task.completed) {
         return false;
       }
-      return !!task.due && task.due < today;
+      const plannedDate = parseDate(task.planned);
+      const dueDate = parseDate(task.due);
+      if (dueDate) {
+        return dueDate < today;
+      }
+      if (plannedDate) {
+        return plannedDate < today;
+      }
+      return false;
     });
 
     const plannedToday = this.index.tasks.filter((task) => {
       if (!this.showCompleted && task.completed) {
         return false;
       }
-      return task.planned === today;
+      const plannedDate = parseDate(task.planned);
+      const dueDate = parseDate(task.due);
+      if (plannedDate && dueDate) {
+        return plannedDate <= today && today <= dueDate;
+      }
+      if (plannedDate && !dueDate) {
+        return plannedDate === today;
+      }
+      return false;
     });
 
     const plannedTomorrow = this.index.tasks.filter((task) => {
       if (!this.showCompleted && task.completed) {
         return false;
       }
-      return task.planned === tomorrow;
+      const plannedDate = parseDate(task.planned);
+      return plannedDate === tomorrow;
     });
 
     this.renderSection(content, "Överfört", overdue, "overdue");
@@ -435,6 +452,14 @@ function normalizeDateString(value: string): string {
     return token;
   }
   return value.trim();
+}
+
+function parseDate(value?: string): string | undefined {
+  if (!value) {
+    return undefined;
+  }
+  const normalized = normalizeDateString(value);
+  return /^\d{4}-\d{2}-\d{2}$/.test(normalized) ? normalized : undefined;
 }
 
 async function updateTaskInFile(
