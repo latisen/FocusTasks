@@ -15,6 +15,7 @@ type TaskItem = {
   text: string;
   completed: boolean;
   project?: string;
+  context?: string;
   planned?: string;
   due?: string;
   review?: string;
@@ -119,6 +120,7 @@ class TaskIndex {
           text: parsed.text,
           completed: match[1].toLowerCase() === "x",
           project: parsed.project,
+          context: parsed.context,
           planned: parsed.planned,
           due: parsed.due,
           review: parsed.review,
@@ -142,7 +144,8 @@ class FocusTasksView extends ItemView {
     | "today"
     | "projects"
     | "review"
-    | "tags" = "inbox";
+    | "tags"
+    | "contexts" = "inbox";
   private sectionExpanded = new Map<string, boolean>();
   private expandedTasks = new Set<string>();
   private selectedTags = new Set<string>();
@@ -236,6 +239,16 @@ class FocusTasksView extends ItemView {
     tagsButton.toggleClass("is-active", this.selectedSection === "tags");
     tagsButton.addEventListener("click", () => {
       this.selectedSection = "tags";
+      this.render();
+    });
+
+    const contextsButton = sidebar.createEl("button", {
+      text: "Kontext"
+    });
+    contextsButton.addClass("focus-tasks-nav-item");
+    contextsButton.toggleClass("is-active", this.selectedSection === "contexts");
+    contextsButton.addEventListener("click", () => {
+      this.selectedSection = "contexts";
       this.render();
     });
 
@@ -430,6 +443,25 @@ class FocusTasksView extends ItemView {
 
       for (const task of tasks) {
         this.renderTaskRow(task, this.listEl);
+      }
+      return;
+    }
+
+    if (this.selectedSection === "contexts") {
+      const contexts = groupTasksByContext(this.index.tasks, !this.showCompleted);
+      if (contexts.size === 0) {
+        content.createEl("div", { text: "Inga kontexter ännu." });
+        return;
+      }
+
+      for (const [contextName, tasks] of contexts) {
+        const sorted = sortTasksByDate(tasks);
+        this.renderSection(
+          content,
+          contextName,
+          sorted,
+          `context:${contextName}`
+        );
       }
       return;
     }
@@ -721,6 +753,7 @@ export default class FocusTasksPlugin extends Plugin {
 function parseTaskMetadata(rawText: string): {
   text: string;
   project?: string;
+  context?: string;
   planned?: string;
   due?: string;
   review?: string;
@@ -728,6 +761,7 @@ function parseTaskMetadata(rawText: string): {
 } {
   let text = rawText;
   let project: string | undefined;
+  let context: string | undefined;
   let planned: string | undefined;
   let due: string | undefined;
   let review: string | undefined;
@@ -742,6 +776,18 @@ function parseTaskMetadata(rawText: string): {
       ? normalizeProjectName(projectAlt.value)
       : undefined;
     text = projectAlt.text;
+  }
+
+  const contextResult = extractMetadata(text, "context");
+  if (contextResult.value) {
+    context = normalizeContextName(contextResult.value);
+    text = contextResult.text;
+  } else {
+    const contextAlt = extractMetadata(text, "område");
+    context = contextAlt.value
+      ? normalizeContextName(contextAlt.value)
+      : undefined;
+    text = contextAlt.text;
   }
 
   const plannedResult = extractMetadata(text, "planned");
@@ -762,6 +808,7 @@ function parseTaskMetadata(rawText: string): {
   return {
     text: text.trim(),
     project,
+    context,
     planned,
     due,
     review,
@@ -771,7 +818,7 @@ function parseTaskMetadata(rawText: string): {
 
 function extractMetadata(
   text: string,
-  key: "project" | "projekt" | "planned" | "due" | "review"
+  key: "project" | "projekt" | "context" | "område" | "planned" | "due" | "review"
 ): { text: string; value?: string } {
   const regex = new RegExp(
     `(?:^|\\s)${key}::\\s*([^\\n]+?)(?=\\s+\\w+::|$)`,
@@ -825,6 +872,10 @@ function normalizeProjectName(value: string): string {
     return wikilinkMatch[1].trim();
   }
   return trimmed.replace(/#[-\w/]+/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function normalizeContextName(value: string): string {
+  return normalizeProjectName(value);
 }
 
 function normalizeTag(value: string): string {
@@ -952,6 +1003,27 @@ function getTagSummary(
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
+function groupTasksByContext(
+  tasks: TaskItem[],
+  hideCompleted: boolean
+): Map<string, TaskItem[]> {
+  const result = new Map<string, TaskItem[]>();
+  for (const task of tasks) {
+    if (hideCompleted && task.completed) {
+      continue;
+    }
+    if (!task.context) {
+      continue;
+    }
+    const existing = result.get(task.context) ?? [];
+    existing.push(task);
+    result.set(task.context, existing);
+  }
+  return new Map(
+    Array.from(result.entries()).sort(([a], [b]) => a.localeCompare(b))
+  );
+}
+
 function slugify(value: string): string {
   return value
     .toLowerCase()
@@ -968,6 +1040,7 @@ async function updateTaskInFile(
   updates: {
     text?: string;
     project?: string;
+    context?: string;
     planned?: string;
     due?: string;
     review?: string;
@@ -994,6 +1067,7 @@ async function updateTaskInFile(
 
   const text = (updates.text ?? current.text).trim();
   const project = updates.project ?? current.project;
+  const context = updates.context ?? current.context;
   const planned = updates.planned ?? current.planned;
   const due = updates.due ?? current.due;
   const review = updates.review ?? current.review;
@@ -1005,6 +1079,12 @@ async function updateTaskInFile(
     : "project";
   if (project) {
     metaParts.push(`${projectKey}:: ${project}`);
+  }
+  const contextKey = /(?:^|\s)område::/i.test(match[3])
+    ? "område"
+    : "context";
+  if (context) {
+    metaParts.push(`${contextKey}:: ${context}`);
   }
   if (planned) {
     metaParts.push(`planned:: ${planned}`);
