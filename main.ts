@@ -959,12 +959,21 @@ export default class FocusTasksPlugin extends Plugin {
           url: normalizedUrl,
           headers: { "User-Agent": "FocusTasks" }
         });
-        const parsed = parseIcsEvents(
+        const calendarName = source.name || getCalendarNameFromUrl(source.url);
+        let parsed = parseIcsEvents(
           response.text ?? "",
           rangeStart,
           rangeEnd,
-          source.name || getCalendarNameFromUrl(source.url)
+          calendarName
         );
+        if (parsed.length === 0) {
+          parsed = parseIcsEvents(
+            response.text ?? "",
+            undefined,
+            undefined,
+            calendarName
+          );
+        }
         for (const event of parsed) {
           const list = events.get(event.date) ?? [];
           list.push(event);
