@@ -1531,18 +1531,15 @@ function parseIcsEvents(
     }
 
     if (event.isRecurring()) {
-      let iteratorStart: ICAL.Time | undefined;
+      let iteratorStart = event.startDate.clone();
       if (startLimit) {
         const [year, month, day] = startLimit.split("-").map(Number);
-        iteratorStart = new ICAL.Time({
-          year,
-          month,
-          day,
-          hour: 0,
-          minute: 0,
-          second: 0,
-          zone: event.startDate.zone ?? ICAL.Timezone.localTimezone
-        });
+        const eventStartDate = formatIcalDate(event.startDate);
+        if (startLimit > eventStartDate) {
+          iteratorStart.year = year;
+          iteratorStart.month = month;
+          iteratorStart.day = day;
+        }
       }
       const iterator = event.iterator(iteratorStart);
       let next = iterator.next();
