@@ -11,7 +11,7 @@ const context = await esbuild.context({
   format: "cjs",
   sourcemap: !isProduction,
   target: "es2018",
-  external: ["obsidian"],
+  external: ["obsidian", "@codemirror/state", "@codemirror/view"],
   logLevel: "info"
 });
 

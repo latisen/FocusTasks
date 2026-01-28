@@ -10,8 +10,6 @@
   },
   "devDependencies": {
     "@types/node": "^20.11.24",
-    "@codemirror/state": "^6.4.1",
-    "@codemirror/view": "^6.26.3",
     "esbuild": "^0.20.2",
     "obsidian": "^1.5.12",
     "typescript": "^5.4.5"
