@@ -740,13 +740,18 @@ export default class FocusTasksPlugin extends Plugin {
           continue;
         }
 
-        const label = item.querySelector("label") ?? item;
+        const label =
+          item.querySelector(".task-list-item-label") ||
+          item.querySelector("label") ||
+          item;
 
-        const button = (label as HTMLElement).createEl("button", {
-          cls: "focus-tasks-inline-button",
-          attr: { title: "Edit FocusTasks" }
-        });
+        const button = document.createElement("button");
+        button.className = "focus-tasks-inline-button";
+        button.setAttribute("type", "button");
+        button.setAttribute("title", "Edit FocusTasks");
         setIcon(button, "check-square");
+
+        (label as HTMLElement).appendChild(button);
 
         button.addEventListener("click", (event) => {
           event.preventDefault();
