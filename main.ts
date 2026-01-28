@@ -4,10 +4,13 @@ import {
   Modal,
   Notice,
   Plugin,
+  PluginSettingTab,
+  Setting,
   TFile,
   WorkspaceLeaf,
   debounce
 } from "obsidian";
+import ICAL from "ical.js";
 
 const VIEW_TYPE = "focus-tasks-view";
 
@@ -29,6 +32,22 @@ type TaskSubItem = {
   text: string;
   completed?: boolean;
   kind: "task" | "note";
+};
+
+type CalendarEvent = {
+  title: string;
+  date: string;
+  startTime?: string;
+  allDay: boolean;
+  location?: string;
+};
+
+type FocusTasksSettings = {
+  calendarUrls: string[];
+};
+
+const DEFAULT_SETTINGS: FocusTasksSettings = {
+  calendarUrls: Array.from({ length: 10 }, () => "")
 };
 
 class TaskIndex {
@@ -139,6 +158,7 @@ class TaskIndex {
 
 class FocusTasksView extends ItemView {
   private index: TaskIndex;
+  private plugin: FocusTasksPlugin;
   private showCompleted = false;
   private listEl?: HTMLElement;
   private selectedSection:
@@ -153,9 +173,10 @@ class FocusTasksView extends ItemView {
   private expandedTasks = new Set<string>();
   private selectedTags = new Set<string>();
 
-  constructor(leaf: WorkspaceLeaf, index: TaskIndex) {
+  constructor(leaf: WorkspaceLeaf, index: TaskIndex, plugin: FocusTasksPlugin) {
     super(leaf);
     this.index = index;
+    this.plugin = plugin;
   }
 
   getViewType(): string {
@@ -168,15 +189,15 @@ class FocusTasksView extends ItemView {
 
   async onOpen(): Promise<void> {
     this.containerEl.addClass("focus-tasks-view");
-    this.render();
-    this.index.onChange = () => this.render();
+    this.renderView();
+    this.index.onChange = () => this.renderView();
   }
 
   onClose(): void {
     this.index.onChange = undefined;
   }
 
-  private render(): void {
+  public renderView(): void {
     const { containerEl } = this;
     containerEl.empty();
 
@@ -188,7 +209,7 @@ class FocusTasksView extends ItemView {
     });
     toggleCompleted.addEventListener("click", () => {
       this.showCompleted = !this.showCompleted;
-      this.render();
+      this.renderView();
     });
 
     const layout = containerEl.createDiv("focus-tasks-layout");
@@ -202,7 +223,7 @@ class FocusTasksView extends ItemView {
     inboxButton.toggleClass("is-active", this.selectedSection === "inbox");
     inboxButton.addEventListener("click", () => {
       this.selectedSection = "inbox";
-      this.render();
+      this.renderView();
     });
 
     const todayButton = sidebar.createEl("button", {
@@ -212,7 +233,7 @@ class FocusTasksView extends ItemView {
     todayButton.toggleClass("is-active", this.selectedSection === "today");
     todayButton.addEventListener("click", () => {
       this.selectedSection = "today";
-      this.render();
+      this.renderView();
     });
 
     const projectsButton = sidebar.createEl("button", {
@@ -222,7 +243,7 @@ class FocusTasksView extends ItemView {
     projectsButton.toggleClass("is-active", this.selectedSection === "projects");
     projectsButton.addEventListener("click", () => {
       this.selectedSection = "projects";
-      this.render();
+      this.renderView();
     });
 
     const reviewButton = sidebar.createEl("button", {
@@ -232,7 +253,7 @@ class FocusTasksView extends ItemView {
     reviewButton.toggleClass("is-active", this.selectedSection === "review");
     reviewButton.addEventListener("click", () => {
       this.selectedSection = "review";
-      this.render();
+      this.renderView();
     });
 
     const tagsButton = sidebar.createEl("button", {
@@ -242,7 +263,7 @@ class FocusTasksView extends ItemView {
     tagsButton.toggleClass("is-active", this.selectedSection === "tags");
     tagsButton.addEventListener("click", () => {
       this.selectedSection = "tags";
-      this.render();
+      this.renderView();
     });
 
     const contextsButton = sidebar.createEl("button", {
@@ -252,7 +273,7 @@ class FocusTasksView extends ItemView {
     contextsButton.toggleClass("is-active", this.selectedSection === "contexts");
     contextsButton.addEventListener("click", () => {
       this.selectedSection = "contexts";
-      this.render();
+      this.renderView();
     });
 
     const forecastButton = sidebar.createEl("button", {
@@ -262,7 +283,7 @@ class FocusTasksView extends ItemView {
     forecastButton.toggleClass("is-active", this.selectedSection === "forecast");
     forecastButton.addEventListener("click", () => {
       this.selectedSection = "forecast";
-      this.render();
+      this.renderView();
     });
 
     if (this.selectedSection === "inbox") {
@@ -396,7 +417,7 @@ class FocusTasksView extends ItemView {
         }
         this.selectedTags.add(tag);
         input.value = "";
-        this.render();
+        this.renderView();
       };
 
       input.addEventListener("change", () => {
@@ -416,7 +437,7 @@ class FocusTasksView extends ItemView {
         chip.addEventListener("click", () => {
           this.selectedTags.delete(tag);
           input.value = "";
-          this.render();
+          this.renderView();
         });
       }
 
@@ -426,7 +447,7 @@ class FocusTasksView extends ItemView {
       clearButton.addClass("focus-tasks-tag-clear");
       clearButton.addEventListener("click", () => {
         this.selectedTags.clear();
-        this.render();
+        this.renderView();
       });
 
       if (tagSummary.length === 0) {
@@ -494,10 +515,23 @@ class FocusTasksView extends ItemView {
       );
       this.renderSection(content, "Överfört", overdue, "forecast-overdue");
 
+      const todayEvents = this.plugin.getEventsForDate(today);
+      if (todayEvents.length > 0) {
+        this.renderEventList(content, "Kalender idag", todayEvents);
+      }
+
       for (let offset = 0; offset < days; offset += 1) {
         const date = getLocalDateString(offset);
         const tasks = forecast.get(date) ?? [];
-        this.renderSection(content, formatForecastTitle(date, offset), tasks, `forecast-${date}`);
+        const events = this.plugin.getEventsForDate(date);
+        this.renderSection(
+          content,
+          formatForecastTitle(date, offset),
+          tasks,
+          `forecast-${date}`,
+          undefined,
+          events
+        );
       }
       return;
     }
@@ -543,6 +577,11 @@ class FocusTasksView extends ItemView {
       return plannedDate === tomorrow;
     });
 
+    const todayEvents = this.plugin.getEventsForDate(today);
+    if (todayEvents.length > 0) {
+      this.renderEventList(content, "Kalender idag", todayEvents);
+    }
+
     this.renderSection(content, "Överfört", overdue, "overdue");
     this.renderSection(content, "Planerat idag", plannedToday, "planned-today");
     this.renderSection(
@@ -558,7 +597,8 @@ class FocusTasksView extends ItemView {
     title: string,
     tasks: TaskItem[],
     key: string,
-    sectionId?: string
+    sectionId?: string,
+    events?: CalendarEvent[]
   ): void {
     const section = container.createDiv("focus-tasks-section");
     if (sectionId) {
@@ -574,11 +614,15 @@ class FocusTasksView extends ItemView {
     toggle.addClass("focus-tasks-section-toggle");
     toggle.addEventListener("click", () => {
       this.sectionExpanded.set(key, !isExpanded);
-      this.render();
+      this.renderView();
     });
 
     if (!isExpanded) {
       return;
+    }
+
+    if (events && events.length > 0) {
+      this.renderEventList(section, "Kalender", events);
     }
 
     const list = section.createDiv("focus-tasks-list");
@@ -725,18 +769,50 @@ class FocusTasksView extends ItemView {
       } else {
         this.expandedTasks.add(taskKey);
       }
-      this.render();
+      this.renderView();
     });
+  }
+
+  private renderEventList(
+    container: HTMLElement,
+    title: string,
+    events: CalendarEvent[]
+  ): void {
+    const wrapper = container.createDiv("focus-tasks-events");
+    const header = wrapper.createDiv("focus-tasks-events-header");
+    header.createEl("span", { text: title });
+
+    const list = wrapper.createDiv("focus-tasks-events-list");
+    for (const event of events) {
+      const row = list.createDiv("focus-tasks-event");
+      if (event.allDay) {
+        row.createEl("span", { text: "Heldag" }).addClass("focus-tasks-event-time");
+      } else if (event.startTime) {
+        row.createEl("span", { text: event.startTime }).addClass("focus-tasks-event-time");
+      }
+      row.createEl("span", { text: event.title }).addClass("focus-tasks-event-title");
+      if (event.location) {
+        row.createEl("span", { text: event.location }).addClass("focus-tasks-event-location");
+      }
+    }
   }
 }
 
 export default class FocusTasksPlugin extends Plugin {
   private index!: TaskIndex;
+  public settings: FocusTasksSettings = DEFAULT_SETTINGS;
+  private calendarEvents = new Map<string, CalendarEvent[]>();
+  private calendarInterval?: number;
 
   async onload(): Promise<void> {
     this.index = new TaskIndex(this.app);
+    await this.loadSettings();
 
-    this.registerView(VIEW_TYPE, (leaf) => new FocusTasksView(leaf, this.index));
+    this.registerView(VIEW_TYPE, (leaf) =>
+      new FocusTasksView(leaf, this.index, this)
+    );
+
+    this.addSettingTab(new FocusTasksSettingTab(this.app, this));
 
     this.addRibbonIcon("check-square", "FocusTasks", () => {
       this.activateView().catch(console.error);
@@ -786,10 +862,71 @@ export default class FocusTasksPlugin extends Plugin {
     );
 
     await this.index.refresh();
+    await this.refreshCalendars();
+    this.calendarInterval = window.setInterval(
+      () => this.refreshCalendars(),
+      10 * 60 * 1000
+    );
   }
 
   onunload(): void {
     this.app.workspace.detachLeavesOfType(VIEW_TYPE);
+    if (this.calendarInterval) {
+      window.clearInterval(this.calendarInterval);
+    }
+  }
+
+  getEventsForDate(date: string): CalendarEvent[] {
+    return this.calendarEvents.get(date) ?? [];
+  }
+
+  async loadSettings(): Promise<void> {
+    this.settings = Object.assign(
+      {},
+      DEFAULT_SETTINGS,
+      await this.loadData()
+    );
+  }
+
+  async saveSettings(): Promise<void> {
+    await this.saveData(this.settings);
+    await this.refreshCalendars();
+  }
+
+  async refreshCalendars(): Promise<void> {
+    const urls = this.settings.calendarUrls.filter((url) => url.trim());
+    const events = new Map<string, CalendarEvent[]>();
+
+    for (const url of urls) {
+      try {
+        const response = await this.app.requestUrl({ url });
+        const parsed = parseIcsEvents(response.text ?? "");
+        for (const event of parsed) {
+          const list = events.get(event.date) ?? [];
+          list.push(event);
+          events.set(event.date, list);
+        }
+      } catch (error) {
+        console.error("Calendar fetch failed", error);
+      }
+    }
+
+    for (const [date, list] of events) {
+      events.set(
+        date,
+        list.sort((a, b) => (a.startTime ?? "").localeCompare(b.startTime ?? ""))
+      );
+    }
+
+    this.calendarEvents = events;
+    this.refreshViews();
+  }
+
+  private refreshViews(): void {
+    for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE)) {
+      const view = leaf.view as FocusTasksView;
+      view.renderView();
+    }
   }
 
   private onFileChange(file: TFile | null): void {
@@ -810,6 +947,39 @@ export default class FocusTasksPlugin extends Plugin {
     }
 
     workspace.revealLeaf(leaf);
+  }
+}
+
+class FocusTasksSettingTab extends PluginSettingTab {
+  private plugin: FocusTasksPlugin;
+
+  constructor(app: App, plugin: FocusTasksPlugin) {
+    super(app, plugin);
+    this.plugin = plugin;
+  }
+
+  display(): void {
+    const { containerEl } = this;
+    containerEl.empty();
+
+    containerEl.createEl("h3", { text: "Kalendrar" });
+    containerEl.createEl("p", {
+      text: "Fyll i upp till 10 ICS‑URLer. Lämna tomt för att inaktivera."
+    });
+
+    this.plugin.settings.calendarUrls.forEach((value, index) => {
+      new Setting(containerEl)
+        .setName(`ICS URL ${index + 1}`)
+        .addText((text) =>
+          text
+            .setPlaceholder("https://...")
+            .setValue(value)
+            .onChange(async (newValue) => {
+              this.plugin.settings.calendarUrls[index] = newValue.trim();
+              await this.plugin.saveSettings();
+            })
+        );
+    });
   }
 }
 
@@ -1162,6 +1332,59 @@ function normalizeTagList(value: string): string[] {
 
 function normalizeTaskText(value: string): string {
   return value.replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+function parseIcsEvents(ics: string): CalendarEvent[] {
+  if (!ics.trim()) {
+    return [];
+  }
+  const jcal = ICAL.parse(ics);
+  const component = new ICAL.Component(jcal);
+  const events = component.getAllSubcomponents("vevent");
+  const parsed: CalendarEvent[] = [];
+
+  for (const vevent of events) {
+    const event = new ICAL.Event(vevent);
+    const start = event.startDate;
+    const end = event.endDate;
+    if (!start) {
+      continue;
+    }
+
+    const allDay = start.isDate;
+    const startDate = start.toJSDate();
+    const endDate = end ? end.toJSDate() : start.toJSDate();
+
+    const dates = allDay
+      ? enumerateDates(
+          formatDate(startDate),
+          formatDate(new Date(endDate.getTime() - 86400000))
+        )
+      : enumerateDates(formatDate(startDate), formatDate(endDate));
+
+    for (const date of dates) {
+      parsed.push({
+        title: event.summary || "(Untitled)",
+        date,
+        allDay,
+        startTime: allDay ? undefined : formatTime(startDate),
+        location: event.location || undefined
+      });
+    }
+  }
+
+  return parsed;
+}
+
+function formatDate(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function formatTime(date: Date): string {
+  return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
 function getIndentation(line: string): number {
