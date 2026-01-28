@@ -1013,6 +1013,41 @@ export default class FocusTasksPlugin extends Plugin {
     }
   }
 
+  async debugCalendars(): Promise<void> {
+    const sources = this.settings.calendarSources.filter((source) =>
+      source.url.trim()
+    );
+    if (sources.length === 0) {
+      new Notice("Ingen kalender-URL angiven.");
+      return;
+    }
+
+    const summaries: string[] = [];
+    for (const source of sources) {
+      try {
+        const normalizedUrl = normalizeCalendarUrl(source.url);
+        const response = await requestUrl({ url: normalizedUrl });
+        const text = response.text ?? "";
+        const vevents = (text.match(/BEGIN:VEVENT/g) || []).length;
+        const dtstarts = text.match(/DTSTART[^\n]*/g) || [];
+        const sample = dtstarts.slice(0, 5).join(" | ");
+        const has2026 = dtstarts.some((line) => line.includes("2026"));
+        summaries.push(
+          `${source.name || normalizedUrl}: VEVENT=${vevents}, DTSTART=${dtstarts.length}, 2026=${has2026 ? "ja" : "nej"}`
+        );
+        if (sample) {
+          summaries.push(`Sample: ${sample}`);
+        }
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "Okänt fel";
+        summaries.push(`${source.name || source.url}: FEL ${message}`);
+      }
+    }
+
+    new Notice(summaries.join("\n"), 10000);
+  }
+
   private onFileChange(file: TFile | null): void {
     if (!file || file.extension !== "md") {
       return;
@@ -1065,6 +1100,15 @@ class FocusTasksSettingTab extends PluginSettingTab {
               : Math.max(1, Math.min(60, parsed));
             await this.plugin.saveSettings();
           })
+      );
+
+    new Setting(containerEl)
+      .setName("Testa kalendrar")
+      .setDesc("Visar en snabb summering av ICS‑innehåll")
+      .addButton((button) =>
+        button.setButtonText("Kör test").onClick(async () => {
+          await this.plugin.debugCalendars();
+        })
       );
 
     const status = this.plugin.getCalendarStatus();
