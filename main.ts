@@ -412,7 +412,7 @@ class FocusTasksView extends ItemView {
           return false;
         }
         if (this.selectedTags.size === 0) {
-          return true;
+          return false;
         }
         return Array.from(this.selectedTags).every((tag) =>
           task.tags.includes(tag)
