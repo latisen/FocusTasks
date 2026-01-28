@@ -316,7 +316,11 @@ class FocusTasksView extends ItemView {
     if (task.tags.length > 0) {
       const tagsWrap = metaRow.createDiv("focus-tasks-tags");
       for (const tag of task.tags) {
-        tagsWrap.createEl("span", { text: tag }).addClass("focus-tasks-tag");
+        const tagEl = tagsWrap.createEl("span", { text: tag });
+        tagEl.addClass("focus-tasks-tag");
+        const color = colorFromTag(tag);
+        tagEl.style.background = color.background;
+        tagEl.style.color = color.text;
       }
     }
   }
@@ -402,9 +406,10 @@ function parseTaskMetadata(rawText: string): {
   due = dueResult.value;
   text = dueResult.text;
 
-  const tags = extractTags(text);
+  const tagResult = extractTags(text);
+  text = tagResult.text;
 
-  return { text: text.trim(), project, planned, due, tags };
+  return { text: text.trim(), project, planned, due, tags: tagResult.tags };
 }
 
 function extractMetadata(
@@ -429,12 +434,14 @@ function extractMetadata(
   };
 }
 
-function extractTags(text: string): string[] {
+function extractTags(text: string): { text: string; tags: string[] } {
   const tags = text.match(/#[-\w/]+/g);
   if (!tags) {
-    return [];
+    return { text, tags: [] };
   }
-  return Array.from(new Set(tags));
+  const unique = Array.from(new Set(tags));
+  const cleaned = text.replace(/#[-\w/]+/g, " ").replace(/\s+/g, " ");
+  return { text: cleaned, tags: unique };
 }
 
 function getLocalDateString(addDays = 0): string {
@@ -460,6 +467,19 @@ function parseDate(value?: string): string | undefined {
   }
   const normalized = normalizeDateString(value);
   return /^\d{4}-\d{2}-\d{2}$/.test(normalized) ? normalized : undefined;
+}
+
+function colorFromTag(tag: string): { background: string; text: string } {
+  const clean = tag.replace(/^#/, "").toLowerCase();
+  let hash = 0;
+  for (let i = 0; i < clean.length; i += 1) {
+    hash = (hash * 31 + clean.charCodeAt(i)) % 360;
+  }
+  const hue = hash;
+  return {
+    background: `hsl(${hue} 70% 90%)`,
+    text: `hsl(${hue} 35% 30%)`
+  };
 }
 
 async function updateTaskInFile(
@@ -501,8 +521,10 @@ async function updateTaskInFile(
     metaParts.push(`due:: ${due}`);
   }
 
+  const tags = current.tags.length > 0 ? ` ${current.tags.join(" ")}` : "";
+
   const meta = metaParts.length > 0 ? ` ${metaParts.join(" ")}` : "";
-  lines[index] = `${bullet} [${checkbox}] ${text}${meta}`.trimEnd();
+  lines[index] = `${bullet} [${checkbox}] ${text}${meta}${tags}`.trimEnd();
 
   await app.vault.modify(task.file, lines.join("\n"));
 }
