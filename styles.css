@@ -141,6 +141,11 @@
   gap: 8px;
 }
 
+.focus-tasks-reviewed {
+  font-size: 12px;
+  padding: 2px 8px;
+}
+
 .focus-tasks-meta-row {
   display: flex;
   gap: 10px;

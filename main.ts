@@ -17,6 +17,7 @@ type TaskItem = {
   project?: string;
   planned?: string;
   due?: string;
+  review?: string;
   tags: string[];
 };
 
@@ -65,6 +66,7 @@ class TaskIndex {
           project: parsed.project,
           planned: parsed.planned,
           due: parsed.due,
+          review: parsed.review,
           tags: parsed.tags
         });
       }
@@ -79,7 +81,7 @@ class FocusTasksView extends ItemView {
   private index: TaskIndex;
   private showCompleted = false;
   private listEl?: HTMLElement;
-  private selectedSection: "inbox" | "today" | "projects" = "inbox";
+  private selectedSection: "inbox" | "today" | "projects" | "review" = "inbox";
   private sectionExpanded = new Map<string, boolean>();
   private expandedTasks = new Set<string>();
 
@@ -155,6 +157,16 @@ class FocusTasksView extends ItemView {
       this.render();
     });
 
+    const reviewButton = sidebar.createEl("button", {
+      text: "Review"
+    });
+    reviewButton.addClass("focus-tasks-nav-item");
+    reviewButton.toggleClass("is-active", this.selectedSection === "review");
+    reviewButton.addEventListener("click", () => {
+      this.selectedSection = "review";
+      this.render();
+    });
+
     if (this.selectedSection === "inbox") {
       this.listEl = content.createDiv("focus-tasks-list");
 
@@ -191,6 +203,31 @@ class FocusTasksView extends ItemView {
       for (const [projectName, tasks] of projects) {
         const sorted = sortTasksByDate(tasks);
         this.renderSection(content, projectName, sorted, `project:${projectName}`);
+      }
+      return;
+    }
+
+    if (this.selectedSection === "review") {
+      this.listEl = content.createDiv("focus-tasks-list");
+      const cutoff = getLocalDateString(-7);
+      const tasks = this.index.tasks.filter((task) => {
+        if (!this.showCompleted && task.completed) {
+          return false;
+        }
+        const reviewDate = parseDate(task.review);
+        if (!reviewDate) {
+          return true;
+        }
+        return reviewDate <= cutoff;
+      });
+
+      if (tasks.length === 0) {
+        this.listEl.createEl("div", { text: "Inga uppgifter för review." });
+        return;
+      }
+
+      for (const task of tasks) {
+        this.renderTaskRow(task, this.listEl, true);
       }
       return;
     }
@@ -281,7 +318,11 @@ class FocusTasksView extends ItemView {
     }
   }
 
-  private renderTaskRow(task: TaskItem, container: HTMLElement): void {
+  private renderTaskRow(
+    task: TaskItem,
+    container: HTMLElement,
+    showReviewButton = false
+  ): void {
     const taskKey = `${task.file.path}:${task.line}`;
     const row = container.createDiv("focus-tasks-item");
     row.toggleClass("is-complete", task.completed);
@@ -326,6 +367,18 @@ class FocusTasksView extends ItemView {
       this.app.workspace.getLeaf(false).openFile(task.file);
     });
 
+    if (showReviewButton) {
+      const reviewedButton = noteRow.createEl("button", { text: "Reviewed" });
+      reviewedButton.addClass("focus-tasks-reviewed");
+      reviewedButton.addEventListener("click", () => {
+        updateTaskInFile(this.app, task, {
+          review: getLocalDateString()
+        })
+          .then(() => this.index.triggerRefresh())
+          .catch(console.error);
+      });
+    }
+
     const metaRow = details.createDiv("focus-tasks-meta-row");
 
     const plannedWrap = metaRow.createDiv("focus-tasks-date");
@@ -351,6 +404,12 @@ class FocusTasksView extends ItemView {
         .then(() => this.index.triggerRefresh())
         .catch(console.error);
     });
+
+    if (task.review) {
+      const reviewWrap = metaRow.createDiv("focus-tasks-date");
+      reviewWrap.createEl("span", { text: "Review" });
+      reviewWrap.createEl("span", { text: task.review });
+    }
 
     if (task.tags.length > 0) {
       const tagsWrap = metaRow.createDiv("focus-tasks-tags");
@@ -434,12 +493,14 @@ function parseTaskMetadata(rawText: string): {
   project?: string;
   planned?: string;
   due?: string;
+  review?: string;
   tags: string[];
 } {
   let text = rawText;
   let project: string | undefined;
   let planned: string | undefined;
   let due: string | undefined;
+  let review: string | undefined;
 
   const projectResult = extractMetadata(text, "project");
   if (projectResult.value) {
@@ -461,15 +522,26 @@ function parseTaskMetadata(rawText: string): {
   due = dueResult.value;
   text = dueResult.text;
 
+  const reviewResult = extractMetadata(text, "review");
+  review = reviewResult.value;
+  text = reviewResult.text;
+
   const tagResult = extractTags(text);
   text = tagResult.text;
 
-  return { text: text.trim(), project, planned, due, tags: tagResult.tags };
+  return {
+    text: text.trim(),
+    project,
+    planned,
+    due,
+    review,
+    tags: tagResult.tags
+  };
 }
 
 function extractMetadata(
   text: string,
-  key: "project" | "projekt" | "planned" | "due"
+  key: "project" | "projekt" | "planned" | "due" | "review"
 ): { text: string; value?: string } {
   const regex = new RegExp(
     `(?:^|\\s)${key}::\\s*([^\\n]+?)(?=\\s+\\w+::|$)`,
@@ -480,7 +552,7 @@ function extractMetadata(
     return { text };
   }
   let value = match[1].trim();
-  if (key === "planned" || key === "due") {
+  if (key === "planned" || key === "due" || key === "review") {
     value = normalizeDateString(value);
   }
   return {
@@ -604,7 +676,13 @@ function sortTasksByDate(tasks: TaskItem[]): TaskItem[] {
 async function updateTaskInFile(
   app: App,
   task: TaskItem,
-  updates: { text?: string; project?: string; planned?: string; due?: string }
+  updates: {
+    text?: string;
+    project?: string;
+    planned?: string;
+    due?: string;
+    review?: string;
+  }
 ): Promise<void> {
   const content = await app.vault.read(task.file);
   const lines = content.split(/\r?\n/);
@@ -628,6 +706,7 @@ async function updateTaskInFile(
   const project = updates.project ?? current.project;
   const planned = updates.planned ?? current.planned;
   const due = updates.due ?? current.due;
+  const review = updates.review ?? current.review;
 
   const metaParts: string[] = [];
   const projectKey = /(?:^|\s)projekt::/i.test(match[3])
@@ -641,6 +720,9 @@ async function updateTaskInFile(
   }
   if (due) {
     metaParts.push(`due:: ${due}`);
+  }
+  if (review) {
+    metaParts.push(`review:: ${review}`);
   }
 
   const tags = current.tags.length > 0 ? ` ${current.tags.join(" ")}` : "";
