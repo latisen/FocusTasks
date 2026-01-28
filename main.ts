@@ -76,7 +76,7 @@ class FocusTasksView extends ItemView {
   private index: TaskIndex;
   private showCompleted = false;
   private listEl?: HTMLElement;
-  private selectedSection: "inbox" | "today" = "inbox";
+  private selectedSection: "inbox" | "today" | "projects" = "inbox";
   private sectionExpanded = new Map<string, boolean>();
 
   constructor(leaf: WorkspaceLeaf, index: TaskIndex) {
@@ -141,6 +141,16 @@ class FocusTasksView extends ItemView {
       this.render();
     });
 
+    const projectsButton = sidebar.createEl("button", {
+      text: "Projekt"
+    });
+    projectsButton.addClass("focus-tasks-nav-item");
+    projectsButton.toggleClass("is-active", this.selectedSection === "projects");
+    projectsButton.addEventListener("click", () => {
+      this.selectedSection = "projects";
+      this.render();
+    });
+
     if (this.selectedSection === "inbox") {
       this.listEl = content.createDiv("focus-tasks-list");
 
@@ -158,6 +168,25 @@ class FocusTasksView extends ItemView {
 
       for (const task of tasks) {
         this.renderTaskRow(task, this.listEl);
+      }
+      return;
+    }
+
+    if (this.selectedSection === "projects") {
+      const projects = groupTasksByProject(
+        this.app,
+        this.index.tasks,
+        !this.showCompleted
+      );
+
+      if (projects.size === 0) {
+        content.createEl("div", { text: "Inga projekt ännu." });
+        return;
+      }
+
+      for (const [projectName, tasks] of projects) {
+        const sorted = sortTasksByDate(tasks);
+        this.renderSection(content, projectName, sorted, `project:${projectName}`);
       }
       return;
     }
@@ -464,6 +493,58 @@ function parseDate(value?: string): string | undefined {
   }
   const normalized = normalizeDateString(value);
   return /^\d{4}-\d{2}-\d{2}$/.test(normalized) ? normalized : undefined;
+}
+
+function groupTasksByProject(
+  app: App,
+  tasks: TaskItem[],
+  hideCompleted: boolean
+): Map<string, TaskItem[]> {
+  const result = new Map<string, TaskItem[]>();
+  for (const task of tasks) {
+    if (hideCompleted && task.completed) {
+      continue;
+    }
+    const project = getProjectName(app, task.file);
+    if (!project) {
+      continue;
+    }
+    const existing = result.get(project) ?? [];
+    existing.push(task);
+    result.set(project, existing);
+  }
+  return new Map(
+    Array.from(result.entries()).sort(([a], [b]) => a.localeCompare(b))
+  );
+}
+
+function getProjectName(app: App, file: TFile): string | undefined {
+  const cache = app.metadataCache.getFileCache(file);
+  const project = cache?.frontmatter?.projekt;
+  if (!project) {
+    return undefined;
+  }
+  if (Array.isArray(project)) {
+    return project.join(", ");
+  }
+  return String(project);
+}
+
+function sortTasksByDate(tasks: TaskItem[]): TaskItem[] {
+  return [...tasks].sort((a, b) => {
+    const aDate = parseDate(a.planned) ?? parseDate(a.due);
+    const bDate = parseDate(b.planned) ?? parseDate(b.due);
+    if (aDate && bDate) {
+      return aDate.localeCompare(bDate);
+    }
+    if (aDate && !bDate) {
+      return -1;
+    }
+    if (!aDate && bDate) {
+      return 1;
+    }
+    return a.text.localeCompare(b.text);
+  });
 }
 
 
