@@ -2,11 +2,11 @@ import {
   App,
   ItemView,
   Modal,
+  Notice,
   Plugin,
   TFile,
   WorkspaceLeaf,
-  debounce,
-  setIcon
+  debounce
 } from "obsidian";
 
 const VIEW_TYPE = "focus-tasks-view";
@@ -714,6 +714,33 @@ export default class FocusTasksPlugin extends Plugin {
       callback: () => this.activateView()
     });
 
+    this.addCommand({
+      id: "focus-tasks-edit-task",
+      name: "Edit task metadata",
+      editorCallback: (editor) => {
+        const file = this.app.workspace.getActiveFile();
+        if (!file) {
+          new Notice("Ingen fil är öppen.");
+          return;
+        }
+        const cursorLine = editor.getCursor().line;
+        const targetLine = findNearestTaskLine(editor, cursorLine);
+        if (targetLine === undefined) {
+          new Notice("Ingen uppgift hittades på raden.");
+          return;
+        }
+        const taskText = editor.getLine(targetLine).trim();
+        const modal = new TaskEditModal(
+          this.app,
+          file,
+          targetLine + 1,
+          taskText,
+          () => this.index.triggerRefresh()
+        );
+        modal.open();
+      }
+    });
+
     this.registerEvent(
       this.app.vault.on("modify", (file) => this.onFileChange(file))
     );
@@ -723,51 +750,6 @@ export default class FocusTasksPlugin extends Plugin {
     this.registerEvent(
       this.app.vault.on("rename", (file) => this.onFileChange(file))
     );
-
-    this.registerMarkdownPostProcessor((el, ctx) => {
-      const file = this.app.vault.getAbstractFileByPath(ctx.sourcePath ?? "");
-      if (!(file instanceof TFile)) {
-        return;
-      }
-
-      const items = el.querySelectorAll("li.task-list-item");
-      for (const item of Array.from(items)) {
-        if (item.querySelector(".focus-tasks-inline-button")) {
-          continue;
-        }
-        const sectionInfo = ctx.getSectionInfo(item as HTMLElement);
-        const dataLine = (item as HTMLElement).getAttribute("data-line");
-        if (!sectionInfo && dataLine === null) {
-          continue;
-        }
-
-        const label =
-          item.querySelector(".task-list-item-label") ||
-          item.querySelector("label") ||
-          item;
-        const taskText = (label as HTMLElement).textContent?.trim() ?? "";
-
-        const button = document.createElement("button");
-        button.className = "focus-tasks-inline-button";
-        button.setAttribute("type", "button");
-        button.setAttribute("title", "Edit FocusTasks");
-        setIcon(button, "check-square");
-
-        (label as HTMLElement).appendChild(button);
-
-        button.addEventListener("click", (event) => {
-          event.preventDefault();
-          event.stopPropagation();
-          const line = dataLine !== null
-            ? Number(dataLine) + 1
-            : sectionInfo.lineStart + 1;
-          const modal = new TaskEditModal(this.app, file, line, taskText, () => {
-            this.index.triggerRefresh();
-          });
-          modal.open();
-        });
-      }
-    });
 
     await this.index.refresh();
   }
@@ -976,6 +958,27 @@ class TaskEditModal extends Modal {
     };
     return { task, taskRef: task };
   }
+}
+
+function findNearestTaskLine(editor: any, startLine: number): number | undefined {
+  const isTaskLine = (lineText: string): boolean =>
+    /^\s*[-*]\s+\[( |x|X)\]\s+/.test(lineText);
+
+  const current = editor.getLine(startLine);
+  if (isTaskLine(current)) {
+    return startLine;
+  }
+
+  for (let i = startLine - 1; i >= 0; i -= 1) {
+    if (isTaskLine(editor.getLine(i))) {
+      return i;
+    }
+    if (!editor.getLine(i).trim()) {
+      break;
+    }
+  }
+
+  return undefined;
 }
 
 function parseTaskMetadata(rawText: string): {
