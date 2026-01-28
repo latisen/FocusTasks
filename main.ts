@@ -5,6 +5,7 @@ import {
   Notice,
   Plugin,
   PluginSettingTab,
+  requestUrl,
   Setting,
   TFile,
   WorkspaceLeaf,
@@ -923,7 +924,7 @@ export default class FocusTasksPlugin extends Plugin {
     for (const url of urls) {
       try {
         const normalizedUrl = normalizeCalendarUrl(url);
-        const response = await this.app.requestUrl({
+        const response = await requestUrl({
           url: normalizedUrl,
           headers: { "User-Agent": "FocusTasks" }
         });
