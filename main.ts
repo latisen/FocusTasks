@@ -960,20 +960,12 @@ export default class FocusTasksPlugin extends Plugin {
           headers: { "User-Agent": "FocusTasks" }
         });
         const calendarName = source.name || getCalendarNameFromUrl(source.url);
-        let parsed = parseIcsEvents(
+        const parsed = parseIcsEvents(
           response.text ?? "",
           rangeStart,
           rangeEnd,
           calendarName
         );
-        if (parsed.length === 0) {
-          parsed = parseIcsEvents(
-            response.text ?? "",
-            undefined,
-            undefined,
-            calendarName
-          );
-        }
         for (const event of parsed) {
           const list = events.get(event.date) ?? [];
           list.push(event);
@@ -1450,6 +1442,8 @@ function parseIcsEvents(
   const parsed: CalendarEvent[] = [];
   const startLimit = rangeStart;
   const endLimit = rangeEnd;
+  const maxOccurrences = 2000;
+  let occurrenceCount = 0;
 
   for (const vevent of events) {
     const event = new ICAL.Event(vevent);
@@ -1463,6 +1457,9 @@ function parseIcsEvents(
       );
       let next = iterator.next();
       while (next) {
+        if (occurrenceCount >= maxOccurrences) {
+          break;
+        }
         const occurrence = event.getOccurrenceDetails(next);
         const occDate = formatIcalDate(occurrence.startDate);
         if (startLimit && occDate < startLimit) {
@@ -1480,6 +1477,7 @@ function parseIcsEvents(
             calendarName
           )
         );
+        occurrenceCount += 1;
         next = iterator.next();
       }
       continue;
@@ -1495,6 +1493,7 @@ function parseIcsEvents(
     parsed.push(
       ...buildEventEntries(event, event.startDate, event.endDate, calendarName)
     );
+    occurrenceCount += 1;
   }
 
   return parsed;
