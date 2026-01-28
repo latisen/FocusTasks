@@ -821,6 +821,7 @@ export default class FocusTasksPlugin extends Plugin {
   private calendarLastError?: string;
   private calendarSuccessCount = 0;
   private calendarFailCount = 0;
+  private calendarEventCount = 0;
 
   async onload(): Promise<void> {
     this.index = new TaskIndex(this.app);
@@ -912,6 +913,10 @@ export default class FocusTasksPlugin extends Plugin {
     };
   }
 
+  getCalendarEventCount(): number {
+    return this.calendarEventCount;
+  }
+
   async loadSettings(): Promise<void> {
     const data = (await this.loadData()) as Partial<FocusTasksSettings> & {
       calendarUrls?: string[];
@@ -951,6 +956,7 @@ export default class FocusTasksPlugin extends Plugin {
     this.calendarLastError = undefined;
     this.calendarSuccessCount = 0;
     this.calendarFailCount = 0;
+    this.calendarEventCount = 0;
 
     for (const source of sources) {
       try {
@@ -971,6 +977,7 @@ export default class FocusTasksPlugin extends Plugin {
           list.push(event);
           events.set(event.date, list);
         }
+        this.calendarEventCount += parsed.length;
         this.calendarSuccessCount += 1;
       } catch (error) {
         console.error("Calendar fetch failed", error);
@@ -1046,6 +1053,9 @@ class FocusTasksSettingTab extends PluginSettingTab {
     const stats = this.plugin.getCalendarStats();
     containerEl.createEl("p", {
       text: `Lyckade: ${stats.success} • Misslyckade: ${stats.failed}`
+    });
+    containerEl.createEl("p", {
+      text: `Events hittade: ${this.plugin.getCalendarEventCount()}`
     });
     if (status.lastError) {
       containerEl.createEl("p", { text: status.lastError });
@@ -1452,9 +1462,14 @@ function parseIcsEvents(
     }
 
     if (event.isRecurring()) {
-      const iterator = event.iterator(
-        startLimit ? ICAL.Time.fromDateString(startLimit) : undefined
-      );
+      let iteratorStart: ICAL.Time | undefined;
+      if (startLimit) {
+        iteratorStart = ICAL.Time.fromDateString(startLimit);
+        if (event.startDate.zone) {
+          iteratorStart.zone = event.startDate.zone;
+        }
+      }
+      const iterator = event.iterator(iteratorStart);
       let next = iterator.next();
       while (next) {
         if (occurrenceCount >= maxOccurrences) {
