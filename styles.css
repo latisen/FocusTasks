@@ -62,7 +62,7 @@
   display: grid;
   grid-template-columns: 18px 1fr auto;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   padding: 6px 8px;
   border-radius: 8px;
   border: 1px solid var(--background-modifier-border);
@@ -85,20 +85,28 @@
 .focus-tasks-main {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
 }
 
 .focus-tasks-text-input {
   border: 1px solid var(--background-modifier-border);
   border-radius: 6px;
-  padding: 4px 6px;
+  padding: 3px 6px;
   background: var(--background-primary);
+  font-size: 13px;
+}
+
+.focus-tasks-note-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .focus-tasks-meta-row {
   display: flex;
   gap: 10px;
   flex-wrap: wrap;
+  align-items: center;
 }
 
 .focus-tasks-date {
@@ -112,7 +120,21 @@
 .focus-tasks-date input {
   border: 1px solid var(--background-modifier-border);
   border-radius: 6px;
-  padding: 2px 6px;
+  padding: 1px 6px;
   font-size: 12px;
   background: var(--background-primary);
+}
+
+.focus-tasks-tags {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.focus-tasks-tag {
+  background: var(--background-modifier-hover);
+  border-radius: 999px;
+  padding: 1px 8px;
+  font-size: 11px;
+  color: var(--text-muted);
 }

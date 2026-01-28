@@ -17,6 +17,7 @@ type TaskItem = {
   project?: string;
   planned?: string;
   due?: string;
+  tags: string[];
 };
 
 class TaskIndex {
@@ -60,7 +61,8 @@ class TaskIndex {
           completed: match[1].toLowerCase() === "x",
           project: parsed.project,
           planned: parsed.planned,
-          due: parsed.due
+          due: parsed.due,
+          tags: parsed.tags
         });
       }
     }
@@ -175,6 +177,15 @@ class FocusTasksView extends ItemView {
         }
       });
 
+      const noteRow = main.createDiv("focus-tasks-note-row");
+      const openButton = noteRow.createEl("button", {
+        text: task.file.basename
+      });
+      openButton.addClass("focus-tasks-file");
+      openButton.addEventListener("click", () => {
+        this.app.workspace.getLeaf(false).openFile(task.file);
+      });
+
       const metaRow = main.createDiv("focus-tasks-meta-row");
 
       const plannedWrap = metaRow.createDiv("focus-tasks-date");
@@ -201,13 +212,12 @@ class FocusTasksView extends ItemView {
           .catch(console.error);
       });
 
-      const openButton = row.createEl("button", {
-        text: task.file.basename
-      });
-      openButton.addClass("focus-tasks-file");
-      openButton.addEventListener("click", () => {
-        this.app.workspace.getLeaf(false).openFile(task.file);
-      });
+      if (task.tags.length > 0) {
+        const tagsWrap = metaRow.createDiv("focus-tasks-tags");
+        for (const tag of task.tags) {
+          tagsWrap.createEl("span", { text: tag }).addClass("focus-tasks-tag");
+        }
+      }
     }
   }
 }
@@ -273,6 +283,7 @@ function parseTaskMetadata(rawText: string): {
   project?: string;
   planned?: string;
   due?: string;
+  tags: string[];
 } {
   let text = rawText;
   let project: string | undefined;
@@ -291,7 +302,9 @@ function parseTaskMetadata(rawText: string): {
   due = dueResult.value;
   text = dueResult.text;
 
-  return { text: text.trim(), project, planned, due };
+  const tags = extractTags(text);
+
+  return { text: text.trim(), project, planned, due, tags };
 }
 
 function extractMetadata(
@@ -310,6 +323,14 @@ function extractMetadata(
     text: text.replace(match[0], " "),
     value: match[1].trim()
   };
+}
+
+function extractTags(text: string): string[] {
+  const tags = text.match(/#[-\w/]+/g);
+  if (!tags) {
+    return [];
+  }
+  return Array.from(new Set(tags));
 }
 
 async function updateTaskInFile(
