@@ -525,7 +525,10 @@ class FocusTasksView extends ItemView {
       );
       this.renderSection(content, "Överfört", overdue, "forecast-overdue");
 
-      const todayEvents = this.plugin.getEventsForDate(today);
+      const todayEvents = filterEventsForDate(
+        this.plugin.getEventsForDate(today),
+        today
+      );
       if (todayEvents.length > 0) {
         this.renderEventList(content, "Kalender idag", todayEvents);
       }
@@ -533,7 +536,10 @@ class FocusTasksView extends ItemView {
       for (let offset = 0; offset < days; offset += 1) {
         const date = getLocalDateString(offset);
         const tasks = forecast.get(date) ?? [];
-        const events = this.plugin.getEventsForDate(date);
+        const events = filterEventsForDate(
+          this.plugin.getEventsForDate(date),
+          date
+        );
         this.renderSection(
           content,
           formatForecastTitle(date, offset),
@@ -587,7 +593,10 @@ class FocusTasksView extends ItemView {
       return plannedDate === tomorrow;
     });
 
-    const todayEvents = this.plugin.getEventsForDate(today);
+    const todayEvents = filterEventsForDate(
+      this.plugin.getEventsForDate(today),
+      today
+    );
     if (todayEvents.length > 0) {
       this.renderEventList(content, "Kalender idag", todayEvents);
     }
@@ -1503,6 +1512,13 @@ function normalizeTagList(value: string): string[] {
 
 function normalizeTaskText(value: string): string {
   return value.replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+function filterEventsForDate(
+  events: CalendarEvent[],
+  date: string
+): CalendarEvent[] {
+  return events.filter((event) => event.date === date);
 }
 
 function parseIcsEvents(
