@@ -936,7 +936,12 @@ export default class FocusTasksPlugin extends Plugin {
           return;
         }
         const basePath = this.app.vault.adapter.getBasePath();
-        const absolutePath = path.join(basePath, imagePath);
+        const resolved = this.app.metadataCache.getFirstLinkpathDest(
+          imagePath,
+          file.path
+        );
+        const resolvedPath = resolved ? resolved.path : imagePath;
+        const absolutePath = path.join(basePath, resolvedPath);
         const scriptPath = path.join(
           basePath,
           ".obsidian",
