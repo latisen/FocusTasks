@@ -226,8 +226,46 @@ class FocusTasksView extends ItemView {
     const sidebar = layout.createDiv("focus-tasks-sidebar");
     const content = layout.createDiv("focus-tasks-content");
 
+    const inboxCount = this.index.tasks.filter((task) => {
+      if (!this.showCompleted && task.completed) {
+        return false;
+      }
+      return !task.project && !task.due && !task.planned;
+    }).length;
+
+    const todayDate = getLocalDateString();
+    const overdueCount = this.index.tasks.filter((task) => {
+      if (!this.showCompleted && task.completed) {
+        return false;
+      }
+      const plannedDate = parseDate(task.planned);
+      const dueDate = parseDate(task.due);
+      if (dueDate) {
+        return dueDate < todayDate;
+      }
+      if (plannedDate) {
+        return plannedDate < todayDate;
+      }
+      return false;
+    }).length;
+
+    const todayCount = this.index.tasks.filter((task) => {
+      if (!this.showCompleted && task.completed) {
+        return false;
+      }
+      const plannedDate = parseDate(task.planned);
+      const dueDate = parseDate(task.due);
+      if (plannedDate && dueDate) {
+        return plannedDate <= todayDate && todayDate <= dueDate;
+      }
+      if (plannedDate && !dueDate) {
+        return plannedDate === todayDate;
+      }
+      return false;
+    }).length;
+
     const inboxButton = sidebar.createEl("button", {
-      text: "Inbox"
+      text: `Inbox (${inboxCount})`
     });
     inboxButton.addClass("focus-tasks-nav-item");
     inboxButton.toggleClass("is-active", this.selectedSection === "inbox");
@@ -237,7 +275,7 @@ class FocusTasksView extends ItemView {
     });
 
     const todayButton = sidebar.createEl("button", {
-      text: "Today"
+      text: `Today (Idag ${todayCount}, Överfört ${overdueCount})`
     });
     todayButton.addClass("focus-tasks-nav-item");
     todayButton.toggleClass("is-active", this.selectedSection === "today");
