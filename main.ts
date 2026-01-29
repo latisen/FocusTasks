@@ -1270,7 +1270,7 @@ class TaskEditModal extends Modal {
   > {
     const content = await this.app.vault.read(this.file);
     const lines = content.split(/\r?\n/);
-    const baseIndex = this.line - 1;
+        for (const file of files) {
     if (baseIndex < 0 || baseIndex >= lines.length) {
       return undefined;
     }
@@ -1547,17 +1547,7 @@ function parseIcsEvents(
     }
 
     if (event.isRecurring()) {
-      let iteratorStart = event.startDate.clone();
-      if (startLimit) {
-        const [year, month, day] = startLimit.split("-").map(Number);
-        const eventStartDate = formatIcalDate(event.startDate);
-        if (startLimit > eventStartDate) {
-          iteratorStart.year = year;
-          iteratorStart.month = month;
-          iteratorStart.day = day;
-        }
-      }
-      const iterator = event.iterator(iteratorStart);
+      const iterator = event.iterator();
       let next = iterator.next();
       while (next) {
         if (occurrenceCount >= maxOccurrences) {
