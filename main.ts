@@ -525,14 +525,6 @@ class FocusTasksView extends ItemView {
       );
       this.renderSection(content, "Överfört", overdue, "forecast-overdue");
 
-      const todayEvents = filterEventsForDate(
-        this.plugin.getEventsForDate(today),
-        today
-      );
-      if (todayEvents.length > 0) {
-        this.renderEventList(content, "Kalender idag", todayEvents);
-      }
-
       for (let offset = 0; offset < days; offset += 1) {
         const date = getLocalDateString(offset);
         const tasks = forecast.get(date) ?? [];
