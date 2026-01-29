@@ -153,8 +153,8 @@ def run_openai_vision(image_path: str) -> int:
                         "text": (
                             "Transcribe the handwriting in this image into Markdown. "
                             "The notes are separated by horizontal lines. For each section, "
-                            "create a clear Markdown heading and list the text under it. "
-                            "Return only the transcribed Markdown content, nothing else."
+                            "create a clear Markdown heading using H3 (###) and list the text under it. "
+                            "Return only the transcribed Markdown content, with no code fences or extra text."
                         ),
                     },
                     {
