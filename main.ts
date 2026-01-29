@@ -814,7 +814,7 @@ class FocusTasksView extends ItemView {
         : "";
       row.createEl("span", { text: timeLabel }).addClass("focus-tasks-event-time");
       row
-        .createEl("span", { text: `${event.title}${calendarLabel}` })
+        .createEl("span", { text: `${event.title}${calendarLabel} (${event.date})` })
         .addClass("focus-tasks-event-title");
       if (event.location) {
         row.createEl("span", { text: event.location }).addClass("focus-tasks-event-location");
