@@ -57,13 +57,21 @@ type FocusTasksSettings = {
   calendarRangeDays: number;
   pythonPath: string;
   tesseractPath: string;
+  ocrProvider: "tesseract" | "google" | "openai";
+  googleApiKey: string;
+  openaiApiKey: string;
+  openaiModel: string;
 };
 
 const DEFAULT_SETTINGS: FocusTasksSettings = {
   calendarSources: Array.from({ length: 10 }, () => ({ name: "", url: "" })),
   calendarRangeDays: 7,
   pythonPath: "python3",
-  tesseractPath: ""
+  tesseractPath: "",
+  ocrProvider: "tesseract",
+  googleApiKey: "",
+  openaiApiKey: "",
+  openaiModel: "gpt-4o-mini"
 };
 
 class TaskIndex {
@@ -955,11 +963,14 @@ export default class FocusTasksPlugin extends Plugin {
 
         execFile(
           this.settings.pythonPath,
-          [scriptPath, absolutePath],
+          [scriptPath, absolutePath, this.settings.ocrProvider],
           {
             env: {
               ...process.env,
-              TESSERACT_CMD: this.settings.tesseractPath || process.env.TESSERACT_CMD
+              TESSERACT_CMD: this.settings.tesseractPath || process.env.TESSERACT_CMD,
+              GOOGLE_OCR_KEY: this.settings.googleApiKey || process.env.GOOGLE_OCR_KEY,
+              OPENAI_API_KEY: this.settings.openaiApiKey || process.env.OPENAI_API_KEY,
+              OPENAI_MODEL: this.settings.openaiModel || process.env.OPENAI_MODEL
             }
           },
           (error, stdout, stderr) => {
@@ -1044,7 +1055,11 @@ export default class FocusTasksPlugin extends Plugin {
       calendarRangeDays:
         data.calendarRangeDays ?? DEFAULT_SETTINGS.calendarRangeDays,
       pythonPath: data.pythonPath ?? DEFAULT_SETTINGS.pythonPath,
-      tesseractPath: data.tesseractPath ?? DEFAULT_SETTINGS.tesseractPath
+      tesseractPath: data.tesseractPath ?? DEFAULT_SETTINGS.tesseractPath,
+      ocrProvider: data.ocrProvider ?? DEFAULT_SETTINGS.ocrProvider,
+      googleApiKey: data.googleApiKey ?? DEFAULT_SETTINGS.googleApiKey,
+      openaiApiKey: data.openaiApiKey ?? DEFAULT_SETTINGS.openaiApiKey,
+      openaiModel: data.openaiModel ?? DEFAULT_SETTINGS.openaiModel
     };
 
     if (this.settings.calendarSources.length < 10) {
@@ -1228,6 +1243,24 @@ class FocusTasksSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
+      .setName("OCR‑leverantör")
+      .setDesc("Välj Tesseract eller Google Cloud Vision")
+      .addDropdown((dropdown) =>
+        dropdown
+          .addOption("tesseract", "Tesseract")
+          .addOption("google", "Google Vision")
+          .addOption("openai", "OpenAI Vision")
+          .setValue(this.plugin.settings.ocrProvider)
+          .onChange(async (value) => {
+            this.plugin.settings.ocrProvider = value as
+              | "tesseract"
+              | "google"
+              | "openai";
+            await this.plugin.saveSettings();
+          })
+      );
+
+    new Setting(containerEl)
       .setName("Tesseract‑sökväg")
       .setDesc("Ange full sökväg om Tesseract inte hittas i PATH")
       .addText((text) =>
@@ -1236,6 +1269,45 @@ class FocusTasksSettingTab extends PluginSettingTab {
           .setValue(this.plugin.settings.tesseractPath)
           .onChange(async (newValue) => {
             this.plugin.settings.tesseractPath = newValue.trim();
+            await this.plugin.saveSettings();
+          })
+      );
+
+    new Setting(containerEl)
+      .setName("Google Vision API‑nyckel")
+      .setDesc("Krävs om du väljer Google Vision")
+      .addText((text) =>
+        text
+          .setPlaceholder("AIza...")
+          .setValue(this.plugin.settings.googleApiKey)
+          .onChange(async (newValue) => {
+            this.plugin.settings.googleApiKey = newValue.trim();
+            await this.plugin.saveSettings();
+          })
+      );
+
+    new Setting(containerEl)
+      .setName("OpenAI API‑nyckel")
+      .setDesc("Krävs om du väljer OpenAI Vision")
+      .addText((text) =>
+        text
+          .setPlaceholder("sk-...")
+          .setValue(this.plugin.settings.openaiApiKey)
+          .onChange(async (newValue) => {
+            this.plugin.settings.openaiApiKey = newValue.trim();
+            await this.plugin.saveSettings();
+          })
+      );
+
+    new Setting(containerEl)
+      .setName("OpenAI‑modell")
+      .setDesc("Exempel: gpt-4o-mini")
+      .addText((text) =>
+        text
+          .setPlaceholder("gpt-4o-mini")
+          .setValue(this.plugin.settings.openaiModel)
+          .onChange(async (newValue) => {
+            this.plugin.settings.openaiModel = newValue.trim() || "gpt-4o-mini";
             await this.plugin.saveSettings();
           })
       );
