@@ -24,6 +24,15 @@ def main() -> int:
         print(f"Missing dependencies: {exc}", file=sys.stderr)
         return 3
 
+    tesseract_cmd = None
+    try:
+        import os
+        tesseract_cmd = os.environ.get("TESSERACT_CMD")
+    except Exception:
+        tesseract_cmd = None
+    if tesseract_cmd:
+        pytesseract.pytesseract.tesseract_cmd = tesseract_cmd
+
     try:
         img = Image.open(image_path)
     except Exception as exc:

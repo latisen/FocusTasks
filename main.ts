@@ -56,12 +56,14 @@ type FocusTasksSettings = {
   calendarSources: CalendarSource[];
   calendarRangeDays: number;
   pythonPath: string;
+  tesseractPath: string;
 };
 
 const DEFAULT_SETTINGS: FocusTasksSettings = {
   calendarSources: Array.from({ length: 10 }, () => ({ name: "", url: "" })),
   calendarRangeDays: 7,
-  pythonPath: "python3"
+  pythonPath: "python3",
+  tesseractPath: ""
 };
 
 class TaskIndex {
@@ -954,6 +956,12 @@ export default class FocusTasksPlugin extends Plugin {
         execFile(
           this.settings.pythonPath,
           [scriptPath, absolutePath],
+          {
+            env: {
+              ...process.env,
+              TESSERACT_CMD: this.settings.tesseractPath || process.env.TESSERACT_CMD
+            }
+          },
           (error, stdout, stderr) => {
             if (error) {
               console.error(stderr || error.message);
@@ -1035,7 +1043,8 @@ export default class FocusTasksPlugin extends Plugin {
       calendarSources: sources ?? DEFAULT_SETTINGS.calendarSources,
       calendarRangeDays:
         data.calendarRangeDays ?? DEFAULT_SETTINGS.calendarRangeDays,
-      pythonPath: data.pythonPath ?? DEFAULT_SETTINGS.pythonPath
+      pythonPath: data.pythonPath ?? DEFAULT_SETTINGS.pythonPath,
+      tesseractPath: data.tesseractPath ?? DEFAULT_SETTINGS.tesseractPath
     };
 
     if (this.settings.calendarSources.length < 10) {
@@ -1214,6 +1223,19 @@ class FocusTasksSettingTab extends PluginSettingTab {
           .setValue(this.plugin.settings.pythonPath)
           .onChange(async (newValue) => {
             this.plugin.settings.pythonPath = newValue.trim() || "python3";
+            await this.plugin.saveSettings();
+          })
+      );
+
+    new Setting(containerEl)
+      .setName("Tesseract‑sökväg")
+      .setDesc("Ange full sökväg om Tesseract inte hittas i PATH")
+      .addText((text) =>
+        text
+          .setPlaceholder("/opt/homebrew/bin/tesseract")
+          .setValue(this.plugin.settings.tesseractPath)
+          .onChange(async (newValue) => {
+            this.plugin.settings.tesseractPath = newValue.trim();
             await this.plugin.saveSettings();
           })
       );
