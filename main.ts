@@ -1270,7 +1270,7 @@ class TaskEditModal extends Modal {
   > {
     const content = await this.app.vault.read(this.file);
     const lines = content.split(/\r?\n/);
-        for (const file of files) {
+    const baseIndex = this.line - 1;
     if (baseIndex < 0 || baseIndex >= lines.length) {
       return undefined;
     }
