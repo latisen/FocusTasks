@@ -11,6 +11,8 @@ import {
   WorkspaceLeaf,
   debounce
 } from "obsidian";
+import { execFile } from "child_process";
+import path from "path";
 import ICAL from "ical.js";
 
 const VIEW_TYPE = "focus-tasks-view";
@@ -53,11 +55,13 @@ type CalendarSource = {
 type FocusTasksSettings = {
   calendarSources: CalendarSource[];
   calendarRangeDays: number;
+  pythonPath: string;
 };
 
 const DEFAULT_SETTINGS: FocusTasksSettings = {
   calendarSources: Array.from({ length: 10 }, () => ({ name: "", url: "" })),
-  calendarRangeDays: 7
+  calendarRangeDays: 7,
+  pythonPath: "python3"
 };
 
 class TaskIndex {
@@ -911,6 +915,60 @@ export default class FocusTasksPlugin extends Plugin {
       }
     });
 
+    this.addCommand({
+      id: "focus-tasks-ocr-image",
+      name: "Convert handwriting image to markdown",
+      editorCallback: (editor) => {
+        if ((this.app as any).isMobile) {
+          new Notice("OCR stöds inte på mobil.");
+          return;
+        }
+        const file = this.app.workspace.getActiveFile();
+        if (!file) {
+          new Notice("Ingen fil är öppen.");
+          return;
+        }
+        const line = editor.getCursor().line;
+        const lineText = editor.getLine(line);
+        const imagePath = extractImagePath(lineText);
+        if (!imagePath) {
+          new Notice("Ingen bild hittades på raden.");
+          return;
+        }
+        const basePath = this.app.vault.adapter.getBasePath();
+        const absolutePath = path.join(basePath, imagePath);
+        const scriptPath = path.join(
+          basePath,
+          ".obsidian",
+          "plugins",
+          "FocusTasks",
+          "scripts",
+          "handwriting_ocr.py"
+        );
+
+        execFile(
+          this.settings.pythonPath,
+          [scriptPath, absolutePath],
+          (error, stdout, stderr) => {
+            if (error) {
+              console.error(stderr || error.message);
+              new Notice("OCR misslyckades. Kontrollera python/beroenden.");
+              return;
+            }
+            const output = stdout.trim();
+            if (!output) {
+              new Notice("Ingen text hittades.");
+              return;
+            }
+            editor.replaceRange(`\n\n${output}\n`, {
+              line: line + 1,
+              ch: 0
+            });
+          }
+        );
+      }
+    });
+
     this.registerEvent(
       this.app.vault.on("modify", (file) => this.onFileChange(file))
     );
@@ -971,7 +1029,8 @@ export default class FocusTasksPlugin extends Plugin {
     this.settings = {
       calendarSources: sources ?? DEFAULT_SETTINGS.calendarSources,
       calendarRangeDays:
-        data.calendarRangeDays ?? DEFAULT_SETTINGS.calendarRangeDays
+        data.calendarRangeDays ?? DEFAULT_SETTINGS.calendarRangeDays,
+      pythonPath: data.pythonPath ?? DEFAULT_SETTINGS.pythonPath
     };
 
     if (this.settings.calendarSources.length < 10) {
@@ -1137,6 +1196,19 @@ class FocusTasksSettingTab extends PluginSettingTab {
             this.plugin.settings.calendarRangeDays = Number.isNaN(parsed)
               ? DEFAULT_SETTINGS.calendarRangeDays
               : Math.max(1, Math.min(60, parsed));
+            await this.plugin.saveSettings();
+          })
+      );
+
+    new Setting(containerEl)
+      .setName("Python‑kommando")
+      .setDesc("Används för OCR av handskrivna bilder")
+      .addText((text) =>
+        text
+          .setPlaceholder("python3")
+          .setValue(this.plugin.settings.pythonPath)
+          .onChange(async (newValue) => {
+            this.plugin.settings.pythonPath = newValue.trim() || "python3";
             await this.plugin.saveSettings();
           })
       );
@@ -1542,6 +1614,23 @@ function normalizeTagList(value: string): string[] {
 
 function normalizeTaskText(value: string): string {
   return value.replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+function extractImagePath(lineText: string): string | undefined {
+  const wikiMatch = /!\[\[(.+?)\]\]/.exec(lineText);
+  if (wikiMatch) {
+    return sanitizeLinkPath(wikiMatch[1]);
+  }
+  const mdMatch = /!\[[^\]]*\]\((.+?)\)/.exec(lineText);
+  if (mdMatch) {
+    return sanitizeLinkPath(mdMatch[1]);
+  }
+  return undefined;
+}
+
+function sanitizeLinkPath(raw: string): string {
+  const cleaned = raw.split("|")[0].split("#")[0].trim();
+  return cleaned;
 }
 
 function filterEventsForDate(
