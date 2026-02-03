@@ -47,6 +47,26 @@
   background: transparent;
 }
 
+@media (max-width: 900px) {
+  .focus-tasks-layout {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto 1fr;
+  }
+
+  .focus-tasks-sidebar {
+    flex-direction: row;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    border-right: none;
+    border-bottom: 1px solid var(--background-modifier-border);
+  }
+
+  .focus-tasks-nav-item {
+    white-space: nowrap;
+    flex: 0 0 auto;
+  }
+}
+
 .focus-tasks-nav-item.is-active {
   background: var(--background-modifier-hover);
   font-weight: 600;
