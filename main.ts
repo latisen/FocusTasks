@@ -11,8 +11,6 @@ import {
   WorkspaceLeaf,
   debounce
 } from "obsidian";
-import { execFile } from "child_process";
-import path from "path";
 import ICAL from "ical.js";
 
 const VIEW_TYPE = "focus-tasks-view";
@@ -933,6 +931,18 @@ export default class FocusTasksPlugin extends Plugin {
           new Notice("OCR stöds inte på mobil.");
           return;
         }
+
+        let execFile: typeof import("child_process").execFile;
+        let pathModule: typeof import("path");
+        try {
+          execFile = require("child_process").execFile;
+          pathModule = require("path");
+        } catch (error) {
+          console.error("OCR requires Node.js APIs", error);
+          new Notice("OCR kräver desktop‑klienten.");
+          return;
+        }
+
         const file = this.app.workspace.getActiveFile();
         if (!file) {
           new Notice("Ingen fil är öppen.");
@@ -951,8 +961,8 @@ export default class FocusTasksPlugin extends Plugin {
           file.path
         );
         const resolvedPath = resolved ? resolved.path : imagePath;
-        const absolutePath = path.join(basePath, resolvedPath);
-        const scriptPath = path.join(
+        const absolutePath = pathModule.join(basePath, resolvedPath);
+        const scriptPath = pathModule.join(
           basePath,
           ".obsidian",
           "plugins",
