@@ -213,6 +213,9 @@ class FocusTasksView extends ItemView {
     this.containerEl.addClass("focus-tasks-view");
     this.renderView();
     this.index.onChange = () => this.renderView();
+    window.setTimeout(() => {
+      this.index.refresh().catch(console.error);
+    }, 1500);
   }
 
   onClose(): void {
@@ -232,6 +235,13 @@ class FocusTasksView extends ItemView {
     toggleCompleted.addEventListener("click", () => {
       this.showCompleted = !this.showCompleted;
       this.renderView();
+    });
+
+    const refreshButton = header.createEl("button", {
+      text: "Uppdatera"
+    });
+    refreshButton.addEventListener("click", () => {
+      this.index.refresh().catch(console.error);
     });
 
     const layout = containerEl.createDiv("focus-tasks-layout");
@@ -885,6 +895,10 @@ export default class FocusTasksPlugin extends Plugin {
     );
 
     this.addSettingTab(new FocusTasksSettingTab(this.app, this));
+
+    this.app.workspace.onLayoutReady(() => {
+      this.index.refresh().catch(console.error);
+    });
 
     this.addRibbonIcon("check-square", "FocusTasks", () => {
       this.activateView().catch(console.error);
