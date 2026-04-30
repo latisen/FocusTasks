@@ -1,5 +1,6 @@
 import {
   App,
+  Editor,
   ItemView,
   Modal,
   Notice,
@@ -32,6 +33,8 @@ type TaskItem = {
 type TaskSubItem = {
   text: string;
   completed?: boolean;
+  planned?: string;
+  due?: string;
   kind: "task" | "note";
 };
 
@@ -96,7 +99,9 @@ class TaskIndex {
   }
 
   async refresh(): Promise<void> {
-    const files = this.app.vault.getMarkdownFiles();
+    const files = this.app.vault
+      .getMarkdownFiles()
+      .filter((file) => !isInTemplatesFolder(file.path));
     const tasks: TaskItem[] = [];
 
     for (const file of files) {
@@ -135,7 +140,9 @@ class TaskIndex {
               subitems.push({
                 kind: "task",
                 text: subParsed.text,
-                completed: subTaskMatch[1].toLowerCase() === "x"
+                completed: subTaskMatch[1].toLowerCase() === "x",
+                planned: subParsed.planned,
+                due: subParsed.due
               });
             }
             j += 1;
@@ -258,7 +265,8 @@ class FocusTasksView extends ItemView {
       if (!this.showCompleted && task.completed) {
         return false;
       }
-      return !task.project && !task.due && !task.planned;
+      const dates = getTaskEffectiveDates(task);
+      return !task.project && !dates.due && !dates.planned;
     }).length;
 
     const todayDate = getLocalDateString();
@@ -266,8 +274,7 @@ class FocusTasksView extends ItemView {
       if (!this.showCompleted && task.completed) {
         return false;
       }
-      const plannedDate = parseDate(task.planned);
-      const dueDate = parseDate(task.due);
+      const { planned: plannedDate, due: dueDate } = getTaskEffectiveDates(task);
       if (dueDate) {
         return dueDate < todayDate;
       }
@@ -277,20 +284,11 @@ class FocusTasksView extends ItemView {
       return false;
     }).length;
 
-    const todayCount = this.index.tasks.filter((task) => {
-      if (!this.showCompleted && task.completed) {
-        return false;
-      }
-      const plannedDate = parseDate(task.planned);
-      const dueDate = parseDate(task.due);
-      if (plannedDate && dueDate) {
-        return plannedDate <= todayDate && todayDate <= dueDate;
-      }
-      if (plannedDate && !dueDate) {
-        return plannedDate === todayDate;
-      }
-      return false;
-    }).length;
+    const todayCount = getPlannedTasksForDate(
+      this.index.tasks,
+      todayDate,
+      this.showCompleted
+    ).length;
 
     const inboxButton = sidebar.createEl("button", {
       text: `Inbox (${inboxCount})`
@@ -363,22 +361,33 @@ class FocusTasksView extends ItemView {
     });
 
     if (this.selectedSection === "inbox") {
-      this.listEl = content.createDiv("focus-tasks-list");
-
       const tasks = this.index.tasks.filter((task) => {
         if (!this.showCompleted && task.completed) {
           return false;
         }
-        return !task.project && !task.due && !task.planned;
+        const dates = getTaskEffectiveDates(task);
+        return !task.project && !dates.due && !dates.planned;
       });
 
+      this.listEl = content.createDiv("focus-tasks-list");
       if (tasks.length === 0) {
         this.listEl.createEl("div", { text: "Inga uppgifter ännu." });
         return;
       }
 
-      for (const task of tasks) {
-        this.renderTaskRow(task, this.listEl);
+      const grouped = groupTasksByRootFolder(tasks);
+      for (const [groupName, groupTasks] of grouped) {
+        const group = this.listEl.createDiv("focus-tasks-inbox-group");
+        group
+          .createEl("div", {
+            text: `${groupName} (${groupTasks.length})`
+          })
+          .addClass("focus-tasks-inbox-group-title");
+
+        const list = group.createDiv("focus-tasks-list");
+        for (const task of groupTasks) {
+          this.renderTaskRow(task, list);
+        }
       }
       return;
     }
@@ -617,8 +626,7 @@ class FocusTasksView extends ItemView {
       if (!this.showCompleted && task.completed) {
         return false;
       }
-      const plannedDate = parseDate(task.planned);
-      const dueDate = parseDate(task.due);
+      const { planned: plannedDate, due: dueDate } = getTaskEffectiveDates(task);
       if (dueDate) {
         return dueDate < today;
       }
@@ -628,26 +636,17 @@ class FocusTasksView extends ItemView {
       return false;
     });
 
-    const plannedToday = this.index.tasks.filter((task) => {
-      if (!this.showCompleted && task.completed) {
-        return false;
-      }
-      const plannedDate = parseDate(task.planned);
-      const dueDate = parseDate(task.due);
-      if (plannedDate && dueDate) {
-        return plannedDate <= today && today <= dueDate;
-      }
-      if (plannedDate && !dueDate) {
-        return plannedDate === today;
-      }
-      return false;
-    });
+    const plannedToday = getPlannedTasksForDate(
+      this.index.tasks,
+      today,
+      this.showCompleted
+    );
 
     const plannedTomorrow = this.index.tasks.filter((task) => {
       if (!this.showCompleted && task.completed) {
         return false;
       }
-      const plannedDate = parseDate(task.planned);
+      const { planned: plannedDate } = getTaskEffectiveDates(task);
       return plannedDate === tomorrow;
     });
 
@@ -759,15 +758,105 @@ class FocusTasksView extends ItemView {
       }
     });
 
-    const details = main.createDiv("focus-tasks-details");
-    const noteRow = details.createDiv("focus-tasks-note-row");
-    const openButton = noteRow.createEl("button", {
+    const headerActions = headerRow.createDiv("focus-tasks-header-actions");
+    const openNoteButton = headerActions.createEl("button", {
       text: task.file.basename
     });
-    openButton.addClass("focus-tasks-file");
-    openButton.addEventListener("click", () => {
-      this.app.workspace.getLeaf(false).openFile(task.file);
+    openNoteButton.addClass("focus-tasks-open-note");
+    openNoteButton.addEventListener("click", () => {
+      this.openTaskNote(task);
     });
+
+    const editButton = headerActions.createEl("button", {
+      text: "Edit"
+    });
+    editButton.addClass("focus-tasks-edit-task");
+    editButton.addEventListener("click", () => {
+      const modal = new TaskEditModal(
+        this.app,
+        task.file,
+        task.line,
+        task.text,
+        () => this.index.triggerRefresh()
+      );
+      modal.open();
+    });
+
+    const hasInfo = task.subitems.some((item) => item.kind === "note");
+    const hasSubtasks = task.subitems.some((item) => item.kind === "task");
+    if (hasInfo || hasSubtasks) {
+      const indicators = headerActions.createDiv("focus-tasks-subitem-indicators");
+      if (hasInfo) {
+        const infoIndicator = indicators.createEl("span", { text: "i" });
+        infoIndicator.addClass("focus-tasks-subitem-indicator");
+        infoIndicator.addClass("is-info");
+        infoIndicator.setAttribute("aria-label", "Har information");
+        infoIndicator.setAttribute("title", "Har information");
+      }
+      if (hasSubtasks) {
+        const taskIndicator = indicators.createEl("span", { text: "✓" });
+        taskIndicator.addClass("focus-tasks-subitem-indicator");
+        taskIndicator.addClass("is-subtask");
+        taskIndicator.setAttribute("aria-label", "Har subtasks");
+        taskIndicator.setAttribute("title", "Har subtasks");
+      }
+    }
+
+    const quickMeta = main.createDiv("focus-tasks-quick-meta");
+    const effectiveDates = getTaskEffectiveDates(task);
+    if (task.project) {
+      const projectChip = quickMeta.createEl("span", {
+        text: `Projekt: ${task.project}`
+      });
+      projectChip.addClass("focus-tasks-meta-chip");
+      projectChip.addClass("is-project");
+    }
+    if (task.context) {
+      const contextChip = quickMeta.createEl("span", {
+        text: `Kontext: ${task.context}`
+      });
+      contextChip.addClass("focus-tasks-meta-chip");
+      contextChip.addClass("is-context");
+    }
+    if (effectiveDates.planned) {
+      const plannedChip = quickMeta.createEl("span", {
+        text: `Planerad: ${effectiveDates.planned}`
+      });
+      plannedChip.addClass("focus-tasks-meta-chip");
+      plannedChip.addClass("is-planned");
+    }
+    if (effectiveDates.due) {
+      const dueChip = quickMeta.createEl("span", {
+        text: `Due: ${effectiveDates.due}`
+      });
+      dueChip.addClass("focus-tasks-meta-chip");
+      dueChip.addClass("is-due");
+      if (isTaskOverdue(task, getLocalDateString())) {
+        dueChip.addClass("is-overdue");
+      }
+    }
+    for (const tag of task.tags) {
+      const tagChip = quickMeta.createEl("span", { text: tag });
+      tagChip.addClass("focus-tasks-meta-chip");
+      tagChip.addClass("is-tag");
+    }
+    const rootScope = getRootScopeIndicator(task);
+    if (rootScope) {
+      const rootChip = quickMeta.createEl("span", {
+        text: `Root: ${rootScope}`
+      });
+      rootChip.addClass("focus-tasks-meta-chip");
+      rootChip.addClass("is-root");
+    }
+    const fileChip = quickMeta.createEl("span", {
+      text: task.file.path
+    });
+    fileChip.addClass("focus-tasks-meta-chip");
+    fileChip.addClass("is-file");
+
+    const details = main.createDiv("focus-tasks-details");
+    const noteRow = details.createDiv("focus-tasks-note-row");
+    noteRow.createEl("span", { text: task.file.basename }).addClass("focus-tasks-file");
 
     if (showReviewButton) {
       const reviewedButton = noteRow.createEl("button", { text: "Reviewed" });
@@ -786,7 +875,7 @@ class FocusTasksView extends ItemView {
     const plannedWrap = metaRow.createDiv("focus-tasks-date");
     plannedWrap.createEl("span", { text: "Planerad" });
     const plannedInput = plannedWrap.createEl("input", { type: "date" });
-    plannedInput.value = task.planned ?? "";
+    plannedInput.value = task.planned ?? effectiveDates.planned ?? "";
     plannedInput.addEventListener("change", () => {
       updateTaskInFile(this.app, task, {
         planned: plannedInput.value || undefined
@@ -798,7 +887,7 @@ class FocusTasksView extends ItemView {
     const dueWrap = metaRow.createDiv("focus-tasks-date");
     dueWrap.createEl("span", { text: "Due" });
     const dueInput = dueWrap.createEl("input", { type: "date" });
-    dueInput.value = task.due ?? "";
+    dueInput.value = task.due ?? effectiveDates.due ?? "";
     dueInput.addEventListener("change", () => {
       updateTaskInFile(this.app, task, {
         due: dueInput.value || undefined
@@ -813,26 +902,10 @@ class FocusTasksView extends ItemView {
       reviewWrap.createEl("span", { text: task.review });
     }
 
-    if (task.tags.length > 0) {
-      const tagsWrap = metaRow.createDiv("focus-tasks-tags");
-      for (const tag of task.tags) {
-        const tagEl = tagsWrap.createEl("span", { text: tag });
-        tagEl.addClass("focus-tasks-tag");
-      }
-    }
-
-    const rootScope = getRootScopeIndicator(task);
-    if (rootScope) {
-      const rootTag = metaRow.createEl("span", {
-        text: `root: ${rootScope}`
-      });
-      rootTag.addClass("focus-tasks-tag");
-      rootTag.addClass("focus-tasks-root-indicator");
-    }
-
     if (task.subitems.length > 0) {
       const subitemsWrap = details.createDiv("focus-tasks-subitems");
-      for (const item of task.subitems) {
+      const sortedSubitems = sortSubitemsForDisplay(task.subitems);
+      for (const item of sortedSubitems) {
         const subRow = subitemsWrap.createDiv("focus-tasks-subitem");
         if (item.kind === "task") {
           subRow.createEl("input", {
@@ -887,6 +960,10 @@ class FocusTasksView extends ItemView {
         row.createEl("span", { text: event.location }).addClass("focus-tasks-event-location");
       }
     }
+  }
+
+  private openTaskNote(task: TaskItem): void {
+    this.app.workspace.getLeaf(false).openFile(task.file).catch(console.error);
   }
 }
 
@@ -949,6 +1026,17 @@ export default class FocusTasksPlugin extends Plugin {
           () => this.index.triggerRefresh()
         );
         modal.open();
+      }
+    });
+
+    this.addCommand({
+      id: "focus-tasks-insert-todays-tasks",
+      name: "Klistra in dagens uppgifter som punktlista",
+      editorCallback: (editor) => {
+        this.insertTodaysTasks(editor).catch((error) => {
+          console.error("Failed to insert today's tasks", error);
+          new Notice("Kunde inte klistra in dagens uppgifter.");
+        });
       }
     });
 
@@ -1221,6 +1309,26 @@ export default class FocusTasksPlugin extends Plugin {
     this.index.triggerRefresh();
   }
 
+  private async insertTodaysTasks(editor: Editor): Promise<void> {
+    await this.index.refresh();
+
+    const today = getLocalDateString();
+    const tasks = sortTasksByDate(getPlannedTasksForDate(this.index.tasks, today));
+    const lines = ["# dagens uppgifter", ""];
+
+    for (const task of tasks) {
+      const linkPath = task.file.path.replace(/\.md$/i, "");
+      lines.push(`- [[${linkPath}|${task.file.basename}]] ${task.text}`);
+    }
+
+    editor.replaceRange(`${lines.join("\n")}\n`, editor.getCursor());
+    new Notice(
+      tasks.length > 0
+        ? `Klistrade in ${tasks.length} dagens uppgifter.`
+        : "Klistrade in rubriken för dagens uppgifter."
+    );
+  }
+
   private async activateView(): Promise<void> {
     const { workspace } = this.app;
 
@@ -1436,46 +1544,67 @@ class TaskEditModal extends Modal {
 
     const { task } = taskData;
 
-    const titleInput = contentEl.createEl("input", {
+    const createField = (label: string): HTMLDivElement => {
+      const field = contentEl.createDiv("focus-tasks-modal-field");
+      field.createEl("label", { text: label }).addClass("focus-tasks-modal-label");
+      return field;
+    };
+
+    const createDateField = (
+      label: string,
+      value?: string
+    ): HTMLInputElement => {
+      const field = createField(label);
+      const controls = field.createDiv("focus-tasks-modal-date-controls");
+      const input = controls.createEl("input", {
+        type: "date",
+        value: value ?? ""
+      });
+      input.addClass("focus-tasks-modal-input");
+
+      const clearButton = controls.createEl("button", {
+        text: "Rensa",
+        cls: "focus-tasks-modal-clear"
+      });
+      clearButton.addEventListener("click", () => {
+        input.value = "";
+      });
+
+      return input;
+    };
+
+    const titleField = createField("Titel");
+    const titleInput = titleField.createEl("input", {
       type: "text",
       value: task.text,
       attr: { placeholder: "Titel" }
     });
     titleInput.addClass("focus-tasks-modal-input");
 
-    const projectInput = contentEl.createEl("input", {
+    const projectField = createField("Projekt");
+    const projectInput = projectField.createEl("input", {
       type: "text",
       value: task.project ?? "",
       attr: { placeholder: "Project" }
     });
     projectInput.addClass("focus-tasks-modal-input");
 
-    const contextInput = contentEl.createEl("input", {
+    const contextField = createField("Kontext");
+    const contextInput = contextField.createEl("input", {
       type: "text",
       value: task.context ?? "",
       attr: { placeholder: "Kontext" }
     });
     contextInput.addClass("focus-tasks-modal-input");
 
-    const plannedInput = contentEl.createEl("input", {
-      type: "date",
-      value: task.planned ?? ""
-    });
-    plannedInput.addClass("focus-tasks-modal-input");
+    const plannedInput = createDateField("Planerad", task.planned);
 
-    const dueInput = contentEl.createEl("input", {
-      type: "date",
-      value: task.due ?? ""
-    });
-    dueInput.addClass("focus-tasks-modal-input");
+    const dueInput = createDateField("Due", task.due);
 
-    const reviewInput = contentEl.createEl("input", {
-      type: "date",
-      value: task.review ?? ""
-    });
-    reviewInput.addClass("focus-tasks-modal-input");
+    const reviewInput = createDateField("Review", task.review);
 
-    const tagsInput = contentEl.createEl("input", {
+    const tagsField = createField("Taggar");
+    const tagsInput = tagsField.createEl("input", {
       type: "text",
       value: task.tags.join(", "),
       attr: { placeholder: "Taggar (komma-separerat)" }
@@ -2004,8 +2133,7 @@ function isTaskOverdue(task: TaskItem, today: string): boolean {
   if (task.completed) {
     return false;
   }
-  const plannedDate = parseDate(task.planned);
-  const dueDate = parseDate(task.due);
+  const { planned: plannedDate, due: dueDate } = getTaskEffectiveDates(task);
   if (dueDate) {
     return dueDate < today;
   }
@@ -2052,8 +2180,10 @@ function getProjectName(app: App, file: TFile): string | undefined {
 
 function sortTasksByDate(tasks: TaskItem[]): TaskItem[] {
   return [...tasks].sort((a, b) => {
-    const aDate = parseDate(a.planned) ?? parseDate(a.due);
-    const bDate = parseDate(b.planned) ?? parseDate(b.due);
+    const aDates = getTaskEffectiveDates(a);
+    const bDates = getTaskEffectiveDates(b);
+    const aDate = aDates.planned ?? aDates.due;
+    const bDate = bDates.planned ?? bDates.due;
     if (aDate && bDate) {
       return aDate.localeCompare(bDate);
     }
@@ -2082,8 +2212,7 @@ function buildForecastMap(
     if (hideCompleted && task.completed) {
       continue;
     }
-    const plannedDate = parseDate(task.planned);
-    const dueDate = parseDate(task.due);
+    const { planned: plannedDate, due: dueDate } = getTaskEffectiveDates(task);
 
     if (plannedDate && dueDate) {
       const dates = enumerateDates(plannedDate, dueDate);
@@ -2143,6 +2272,59 @@ function formatForecastTitle(date: string, offset: number): string {
   return date;
 }
 
+function getTaskEffectiveDates(task: TaskItem): { planned?: string; due?: string } {
+  const manualPlanned = parseDate(task.planned);
+  const manualDue = parseDate(task.due);
+  if (manualPlanned || manualDue) {
+    return { planned: manualPlanned, due: manualDue };
+  }
+
+  let earliest: { planned?: string; due?: string; sortDate: string } | undefined;
+  for (const subitem of task.subitems) {
+    if (subitem.kind !== "task" || subitem.completed) {
+      continue;
+    }
+    const subPlanned = parseDate(subitem.planned);
+    const subDue = parseDate(subitem.due);
+    const sortDate = subPlanned ?? subDue;
+    if (!sortDate) {
+      continue;
+    }
+    if (!earliest || sortDate < earliest.sortDate) {
+      earliest = {
+        planned: subPlanned,
+        due: subDue,
+        sortDate
+      };
+    }
+  }
+
+  return {
+    planned: earliest?.planned,
+    due: earliest?.due
+  };
+}
+
+function getPlannedTasksForDate(
+  tasks: TaskItem[],
+  date: string,
+  includeCompleted = false
+): TaskItem[] {
+  return tasks.filter((task) => {
+    if (!includeCompleted && task.completed) {
+      return false;
+    }
+    const { planned: plannedDate, due: dueDate } = getTaskEffectiveDates(task);
+    if (plannedDate && dueDate) {
+      return plannedDate <= date && date <= dueDate;
+    }
+    if (plannedDate && !dueDate) {
+      return plannedDate === date;
+    }
+    return false;
+  });
+}
+
 function getNextAction(tasks: TaskItem[]): string | undefined {
   const openTasks = tasks.filter((task) => !task.completed);
   if (openTasks.length === 0) {
@@ -2200,6 +2382,51 @@ function groupTasksByContext(
   );
 }
 
+function sortSubitemsForDisplay(subitems: TaskSubItem[]): TaskSubItem[] {
+  const notes = subitems.filter((item) => item.kind === "note");
+  const tasks = subitems.filter((item) => item.kind === "task");
+  return [...notes, ...tasks];
+}
+
+function groupTasksByRootFolder(tasks: TaskItem[]): Map<string, TaskItem[]> {
+  const grouped = new Map<string, TaskItem[]>();
+
+  for (const task of tasks) {
+    const rootFolder = getRootFolderName(task.file.path);
+    const label = rootFolder ?? "Övrigt";
+    const existing = grouped.get(label) ?? [];
+    existing.push(task);
+    grouped.set(label, existing);
+  }
+
+  const preferredOrder = new Map(
+    ROOT_SCOPE_TAGS.map((entry, index) => [entry.folder.toLowerCase(), index])
+  );
+
+  return new Map(
+    Array.from(grouped.entries()).sort(([a], [b]) => {
+      const aIndex = preferredOrder.get(a.toLowerCase());
+      const bIndex = preferredOrder.get(b.toLowerCase());
+      if (aIndex !== undefined && bIndex !== undefined) {
+        return aIndex - bIndex;
+      }
+      if (aIndex !== undefined) {
+        return -1;
+      }
+      if (bIndex !== undefined) {
+        return 1;
+      }
+      if (a === "Övrigt") {
+        return 1;
+      }
+      if (b === "Övrigt") {
+        return -1;
+      }
+      return a.localeCompare(b);
+    })
+  );
+}
+
 function slugify(value: string): string {
   return value
     .toLowerCase()
@@ -2232,8 +2459,16 @@ function getRootScopeIndicator(task: TaskItem): string | undefined {
 
 function getRootFolderName(path: string): string | undefined {
   const normalizedPath = path.replace(/^\/+/, "");
+  if (!normalizedPath.includes("/")) {
+    return undefined;
+  }
   const [root] = normalizedPath.split("/");
   return root || undefined;
+}
+
+function isInTemplatesFolder(path: string): boolean {
+  const normalizedPath = path.replace(/^\/+/, "");
+  return normalizedPath === "0. Templates" || normalizedPath.startsWith("0. Templates/");
 }
 
 
