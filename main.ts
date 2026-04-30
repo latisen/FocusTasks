@@ -50,6 +50,12 @@ type CalendarSource = {
   url: string;
 };
 
+const ROOT_SCOPE_TAGS: Array<{ folder: string; tag: string }> = [
+  { folder: "PAAB", tag: "#paab" },
+  { folder: "Tyringe KS", tag: "#tyringeks" },
+  { folder: "Privat", tag: "#privat" }
+];
+
 type FocusTasksSettings = {
   calendarSources: CalendarSource[];
   calendarRangeDays: number;
@@ -813,6 +819,15 @@ class FocusTasksView extends ItemView {
         const tagEl = tagsWrap.createEl("span", { text: tag });
         tagEl.addClass("focus-tasks-tag");
       }
+    }
+
+    const rootScope = getRootScopeIndicator(task);
+    if (rootScope) {
+      const rootTag = metaRow.createEl("span", {
+        text: `root: ${rootScope}`
+      });
+      rootTag.addClass("focus-tasks-tag");
+      rootTag.addClass("focus-tasks-root-indicator");
     }
 
     if (task.subitems.length > 0) {
@@ -2158,6 +2173,33 @@ function slugify(value: string): string {
     .replace(/[^a-z0-9-]/g, "")
     .replace(/-+/g, "-")
     .replace(/^-|-$/g, "");
+}
+
+function getRootScopeIndicator(task: TaskItem): string | undefined {
+  const rootFolder = getRootFolderName(task.file.path);
+  if (!rootFolder) {
+    return undefined;
+  }
+
+  const match = ROOT_SCOPE_TAGS.find(
+    (entry) => entry.folder.toLowerCase() === rootFolder.toLowerCase()
+  );
+  if (!match) {
+    return undefined;
+  }
+
+  const hasScopeTag = task.tags.some((tag) => normalizeTag(tag) === match.tag);
+  if (hasScopeTag) {
+    return undefined;
+  }
+
+  return match.folder;
+}
+
+function getRootFolderName(path: string): string | undefined {
+  const normalizedPath = path.replace(/^\/+/, "");
+  const [root] = normalizedPath.split("/");
+  return root || undefined;
 }
 
 

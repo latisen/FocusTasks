@@ -259,6 +259,11 @@
   color: var(--text-normal);
 }
 
+.focus-tasks-root-indicator {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+
 .focus-tasks-modal-input {
   width: 100%;
   margin-bottom: 8px;
