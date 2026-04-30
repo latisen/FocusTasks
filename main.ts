@@ -1080,7 +1080,7 @@ export default class FocusTasksPlugin extends Plugin {
   }
 
   async loadSettings(): Promise<void> {
-    const data = (await this.loadData()) as Partial<FocusTasksSettings> & {
+    const data = ((await this.loadData()) ?? {}) as Partial<FocusTasksSettings> & {
       calendarUrls?: string[];
     };
 
@@ -1803,7 +1803,13 @@ function parseIcsEvents(
       continue;
     }
 
-    if (event.isRecurring()) {
+    // Some feeds include malformed overridden instances with both
+    // RECURRENCE-ID and RRULE. Treat those as single instances to avoid
+    // expanding phantom infinite recurrences.
+    const hasRecurrenceOverride =
+      vevent.getFirstPropertyValue("recurrence-id") !== null;
+
+    if (event.isRecurring() && !hasRecurrenceOverride) {
       const iterator = event.iterator();
       let next = iterator.next();
       while (next) {
@@ -1846,7 +1852,26 @@ function parseIcsEvents(
     occurrenceCount += 1;
   }
 
-  return parsed;
+  return dedupeCalendarEvents(parsed);
+}
+
+function dedupeCalendarEvents(events: CalendarEvent[]): CalendarEvent[] {
+  const unique = new Map<string, CalendarEvent>();
+  for (const event of events) {
+    const key = [
+      event.date,
+      event.startTime ?? "",
+      event.endTime ?? "",
+      event.title,
+      event.location ?? "",
+      event.calendarName ?? "",
+      event.allDay ? "1" : "0"
+    ].join("|");
+    if (!unique.has(key)) {
+      unique.set(key, event);
+    }
+  }
+  return Array.from(unique.values());
 }
 
 function buildEventEntries(
@@ -1886,9 +1911,18 @@ function formatTime(date: Date): string {
 }
 
 function formatIcalDate(time: ICAL.Time): string {
-  const year = time.year;
-  const month = String(time.month).padStart(2, "0");
-  const day = String(time.day).padStart(2, "0");
+  if (time.isDate) {
+    // All-day event: use the raw calendar date (no timezone conversion needed)
+    const year = time.year;
+    const month = String(time.month).padStart(2, "0");
+    const day = String(time.day).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  }
+  // Timed event: convert to local timezone so the date matches the user's clock
+  const jsDate = time.toJSDate();
+  const year = jsDate.getFullYear();
+  const month = String(jsDate.getMonth() + 1).padStart(2, "0");
+  const day = String(jsDate.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
 }
 
